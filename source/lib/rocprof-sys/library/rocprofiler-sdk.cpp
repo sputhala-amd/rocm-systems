@@ -989,24 +989,6 @@ is_valid(rocprofiler_context_id_t ctx)
     return (errc == ROCPROFILER_STATUS_SUCCESS && status > 0);
 }
 
-void
-flush()
-{
-    if(!tool_data) return;
-
-    for(auto itr : tool_data->get_buffers())
-    {
-        if(itr.handle > 0)
-        {
-            auto status = rocprofiler_flush_buffer(itr);
-            if(status != ROCPROFILER_STATUS_ERROR_BUFFER_BUSY)
-            {
-                ROCPROFILER_CALL(status);
-            }
-        }
-    }
-}
-
 int
 tool_init(rocprofiler_client_finalize_t fini_func, void* user_data)
 {
@@ -1028,9 +1010,16 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* user_data)
 
     ROCPROFILER_CALL(rocprofiler_create_context(&_data->primary_ctx));
 
+    // Tim: Create a context for code objects
+    auto code_obj_ctx = rocprofiler_context_id_t{ 0 };
+    ROCPROFILER_CALL(rocprofiler_create_context(&code_obj_ctx));
+
     ROCPROFILER_CALL(rocprofiler_configure_callback_tracing_service(
-        _data->primary_ctx, ROCPROFILER_CALLBACK_TRACING_CODE_OBJECT, nullptr, 0,
+        code_obj_ctx, ROCPROFILER_CALLBACK_TRACING_CODE_OBJECT, nullptr, 0,
         tool_code_object_callback, _data));
+
+    // Tim: Start the context for code object
+    ROCPROFILER_CALL(rocprofiler_start_context(code_obj_ctx));
 
     for(auto itr : {
             ROCPROFILER_CALLBACK_TRACING_HSA_CORE_API,
@@ -1169,9 +1158,6 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* user_data)
         ROCPROFSYS_VERBOSE_F(1, "Setting amd_smi state to active...\n");
         amd_smi::set_state(State::Active);
     }
-
-    start();
-
     // no errors
     return 0;
 }
@@ -1248,6 +1234,25 @@ start()
     }
 }
 
+// Tim: Expose flush for external access.
+void
+flush()
+{
+    if(!tool_data) return;
+
+    for(auto itr : tool_data->get_buffers())
+    {
+        if(itr.handle > 0)
+        {
+            auto status = rocprofiler_flush_buffer(itr);
+            if(status != ROCPROFILER_STATUS_ERROR_BUFFER_BUSY)
+            {
+                ROCPROFILER_CALL(status);
+            }
+        }
+    }
+}
+
 void
 stop()
 {
@@ -1293,9 +1298,10 @@ rocprofiler_configure(uint32_t version, const char* runtime_version, uint32_t pr
     if(!tim::get_env("ROCPROFSYS_INIT_TOOLING", true)) return nullptr;
     if(!tim::settings::enabled()) return nullptr;
 
-    if(!rocprofsys::config::settings_are_configured() &&
-       rocprofsys::get_state() < rocprofsys::State::Active)
-        rocprofsys_init_tooling_hidden();
+    // Tim: Removing this block because tooling shouldn't been initialized here.
+    // if(!rocprofsys::config::settings_are_configured() &&
+    //    rocprofsys::get_state() < rocprofsys::State::Active)
+    //     rocprofsys_init_tooling_hidden();
 
     if(!rocprofsys::config::get_use_rocm())
     {

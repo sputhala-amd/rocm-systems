@@ -136,11 +136,27 @@ finalization_handler()
     if(get_state() == State::Active) rocprofsys_finalize();
 }
 
+// Tim: Handles attach/detach. This replaces finalization handler if dl in initialized in
+// attach mode.
+void
+attach_detach_handler()
+{
+    if(get_state() < State::Active)
+    {
+        ROCPROFSYS_VERBOSE_F(1, "ATTACH ACTIVE\n");
+        rocprofsys_init_tooling_hidden();
+        return;
+    }
+    rocprofsys_finalize_hidden();
+}
 auto
 ensure_finalization(bool _static_init = false)
 {
     if(config::set_signal_handler(nullptr) == nullptr)
         config::set_signal_handler(&finalization_handler);
+
+    if(config::set_attach_signal_handler(nullptr) == nullptr)
+        config::set_attach_signal_handler(&attach_detach_handler);
 
     if(_static_init)
     {
@@ -403,7 +419,6 @@ rocprofsys_init_library_hidden()
 
     ROCPROFSYS_CONDITIONAL_BASIC_PRINT_F(_debug_init, "\n");
 }
-
 // Initialize RCCL if:
 // - postinit=true - so the code doesn't hang at the initialization stage
 // - get_state() >= State::Init - so the code doesn't throw an exception
@@ -435,6 +450,7 @@ rocprofsys_init_library_hidden_with_rccl(bool postinit)
 extern "C" bool
 rocprofsys_init_tooling_hidden(bool postinit)
 {
+    bool _is_attach = config::is_pre_attach_mode();
     if(get_env("ROCPROFSYS_MONOCHROME", false, false)) tim::log::monochrome() = true;
 
     if(!tim::get_env("ROCPROFSYS_INIT_TOOLING", true))
@@ -455,20 +471,20 @@ rocprofsys_init_tooling_hidden(bool postinit)
 
     ROCPROFSYS_CONDITIONAL_BASIC_PRINT_F(_debug_init, "State is %s...\n",
                                          std::to_string(get_state()).c_str());
-
     if(get_state() != State::PreInit || get_state() == State::Init || _once)
     {
         rccl_setup(postinit);
-        return false;
+        if(!_is_attach || get_state() >= State::Active || _once) return false;
     }
     _once = true;
 
     ROCPROFSYS_SCOPED_THREAD_STATE(ThreadState::Internal);
 
-    ROCPROFSYS_CONDITIONAL_THROW(
-        get_state() == State::Init,
-        "%s called after rocprofsys_init_library() was explicitly called",
-        ROCPROFSYS_FUNCTION);
+    // Tim: Allows this function to be called after rocprofsys_init_library_hidden();
+    // ROCPROFSYS_CONDITIONAL_THROW(
+    //     get_state() == State::Init,
+    //     "%s called after rocprofsys_init_library() was explicitly called",
+    //     ROCPROFSYS_FUNCTION);
 
     ROCPROFSYS_CONDITIONAL_BASIC_PRINT_F(get_verbose_env() >= 0,
                                          "Instrumentation mode: %s\n",
@@ -587,6 +603,9 @@ rocprofsys_init_tooling_hidden(bool postinit)
 
     categories::setup();
 
+#if defined(ROCPROFSYS_USE_ROCM) && ROCPROFSYS_USE_ROCM > 0
+    if(_is_attach) rocprofiler_sdk::start();
+#endif
     // if static objects are destroyed in the inverse order of when they are
     // created this should ensure that finalization is called before perfetto
     // ends the tracing session
@@ -726,6 +745,8 @@ rocprofsys_finalize_hidden(void)
         return;
     }
 
+    bool _is_attach = config::is_pre_attach_mode();
+
     if(get_verbose() >= 0 || get_debug()) fprintf(stderr, "\n");
     ROCPROFSYS_VERBOSE_F(0, "finalizing...\n");
 
@@ -823,7 +844,16 @@ rocprofsys_finalize_hidden(void)
     if(get_use_rocm())
     {
         ROCPROFSYS_VERBOSE_F(1, "Shutting down ROCm...\n");
-        rocprofiler_sdk::shutdown();
+        // Tim: Stop instead of shutting down rocprofiler-sdk in attach mode.
+        if(_is_attach)
+        {
+            rocprofiler_sdk::flush();
+            rocprofiler_sdk::stop();
+        }
+        else
+        {
+            rocprofiler_sdk::shutdown();
+        }
     }
 #endif
 
@@ -1008,13 +1038,15 @@ rocprofsys_finalize_hidden(void)
             .c_str());
 
     debug::close_file();
-    config::finalize();
+    if(!_is_attach) config::finalize();
 
     ROCPROFSYS_VERBOSE_F(0, "Finalized: %s\n", _finalization.as_string().c_str());
 
     tim::signals::enable_signal_detection(
         { tim::signals::sys_signal::SegFault, tim::signals::sys_signal::Stop },
         [](int) {});
+
+    if(_is_attach) return;
 
     common::destroy_static_objects();
 }

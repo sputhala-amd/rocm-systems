@@ -247,6 +247,8 @@ configure_settings(bool _init)
                                ROCPROFSYS_ROCM_VERSION_PATCH);
 #endif
 
+    is_pre_attach_mode() = tim::get_env("ROCPROFSYS_ATTACH", false);
+
     auto _config = *get_config_impl();
 
     // if using timemory, default to perfetto being off
@@ -257,6 +259,10 @@ configure_settings(bool _init)
 
     auto _rocprofsys_debug = _config->get<bool>("ROCPROFSYS_DEBUG");
     if(_rocprofsys_debug) tim::set_env("TIMEMORY_DEBUG_SETTINGS", "1", 0);
+
+    ROCPROFSYS_CONFIG_SETTING(bool, "ROCPROFSYS_ATTACH",
+                              "Determines if rocprofsys is launched in pre-attach mode.",
+                              false, "attach");
 
     ROCPROFSYS_CONFIG_SETTING(
         std::string, "ROCPROFSYS_MODE",
@@ -1184,6 +1190,13 @@ get_signal_handler()
     return _v;
 }
 
+std::atomic<signal_handler_t>&
+get_attach_signal_handler()
+{
+    static auto _v = std::atomic<signal_handler_t>{ nullptr };
+    return _v;
+}
+
 void
 rocprofsys_exit_action(int nsig)
 {
@@ -1191,9 +1204,57 @@ rocprofsys_exit_action(int nsig)
                                 tim::signals::sigmask_scope::process);
     ROCPROFSYS_BASIC_PRINT("Finalizing after signal %i :: %s\n", nsig,
                            signal_settings::str(static_cast<sys_signal>(nsig)).c_str());
-    auto _handler = get_signal_handler().load();
-    if(_handler) (*_handler)();
+
+    // Tim: Handles the case where State is never active i.e. attaching never occured.
+    if(get_state() == State::Active)
+    {
+        auto _handler = get_signal_handler().load();
+        if(_handler) (*_handler)();
+    }
     kill(process::get_id(), nsig);
+}
+
+// Tim: This handles signals for triggering attach/detach. It prevents the process from
+// being killed at the end.
+void
+rocprofsys_attach_detach_action(int, siginfo_t*, void*)
+{
+    if(!config::is_pre_attach_mode())
+    {
+        ROCPROFSYS_BASIC_PRINT(R"(
+    EEEEEEEEEEEEEEEEEEEEEERRRRRRRRRRRRRRRRR   RRRRRRRRRRRRRRRRR        OOOOOOOOO     RRRRRRRRRRRRRRRRR   
+    E::::::::::::::::::::ER::::::::::::::::R  R::::::::::::::::R     OO:::::::::OO   R::::::::::::::::R  
+    E::::::::::::::::::::ER::::::RRRRRR:::::R R::::::RRRRRR:::::R  OO:::::::::::::OO R::::::RRRRRR:::::R 
+    EE::::::EEEEEEEEE::::ERR:::::R     R:::::RRR:::::R     R:::::RO:::::::OOO:::::::ORR:::::R     R:::::R
+    E:::::E       EEEEEE  R::::R     R:::::R  R::::R     R:::::RO::::::O   O::::::O  R::::R     R:::::R
+    E:::::E               R::::R     R:::::R  R::::R     R:::::RO:::::O     O:::::O  R::::R     R:::::R
+    E::::::EEEEEEEEEE     R::::RRRRRR:::::R   R::::RRRRRR:::::R O:::::O     O:::::O  R::::RRRRRR:::::R 
+    E:::::::::::::::E     R:::::::::::::RR    R:::::::::::::RR  O:::::O     O:::::O  R:::::::::::::RR  
+    E:::::::::::::::E     R::::RRRRRR:::::R   R::::RRRRRR:::::R O:::::O     O:::::O  R::::RRRRRR:::::R 
+    E::::::EEEEEEEEEE     R::::R     R:::::R  R::::R     R:::::RO:::::O     O:::::O  R::::R     R:::::R
+    E:::::E               R::::R     R:::::R  R::::R     R:::::RO:::::O     O:::::O  R::::R     R:::::R
+    E:::::E       EEEEEE  R::::R     R:::::R  R::::R     R:::::RO::::::O   O::::::O  R::::R     R:::::R
+    EE::::::EEEEEEEE:::::ERR:::::R     R:::::RRR:::::R     R:::::RO:::::::OOO:::::::ORR:::::R     R:::::R
+    E::::::::::::::::::::ER::::::R     R:::::RR::::::R     R:::::R OO:::::::::::::OO R::::::R     R:::::R
+    E::::::::::::::::::::ER::::::R     R:::::RR::::::R     R:::::R   OO:::::::::OO   R::::::R     R:::::R
+    EEEEEEEEEEEEEEEEEEEEEERRRRRRRR     RRRRRRRRRRRRRRR     RRRRRRR     OOOOOOOOO     RRRRRRRR     RRRRRR
+                                    
+    Trying to attach to an uninitialized process. Only applications launched by rocprof-sys in 
+    pre-attach mode can be attached to. 
+
+    To launch an application in pre-attach mode, either 
+    
+        - set env var `ROCPROFSYS_ATTACH = true` or,
+        - launch the process with `rocprof-sys-sample --pre-attach <OPTIONS> -- <APP> <ARGS>`
+
+    Ignoring attach attempt and continuing...
+        )");
+        return;
+    }
+    tim::signals::block_signals(get_sampling_signals(),
+                                tim::signals::sigmask_scope::process);
+    auto _handler = get_attach_signal_handler().load();
+    if(_handler) (*_handler)();
 }
 
 void
@@ -1234,6 +1295,28 @@ set_signal_handler(signal_handler_t _func)
     return get_signal_handler().load();
 }
 
+signal_handler_t
+set_attach_signal_handler(signal_handler_t _func)
+{
+    if(_func)
+    {
+        auto _handler = get_attach_signal_handler().load(std::memory_order_relaxed);
+        if(get_attach_signal_handler().compare_exchange_strong(_handler, _func,
+                                                               std::memory_order_relaxed))
+        {
+            return _handler;
+        }
+        else
+        {
+            _handler = get_attach_signal_handler().load(std::memory_order_seq_cst);
+            get_attach_signal_handler().store(_func);
+            return _handler;
+        }
+    }
+
+    return get_attach_signal_handler().load();
+}
+
 void
 configure_signal_handler(const std::shared_ptr<settings>& _config)
 {
@@ -1266,6 +1349,15 @@ configure_signal_handler(const std::shared_ptr<settings>& _config)
         _action.sa_handler = rocprofsys_trampoline_handler;
         sigaction(_dyninst_trampoline_signal, &_action, nullptr);
     }
+
+    // Set up custom signals handlers for detaching.
+    // Avoid using timeory's signal handler because it kills the process.
+    int              DETACH_SIG = 10;  // SIGUSR1
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = rocprofsys_attach_detach_action;
+    sa.sa_flags     = SA_SIGINFO;
+    sigaction(DETACH_SIG, &sa, nullptr);
 }
 
 bool
@@ -1717,6 +1809,13 @@ get_mode()
 
 bool&
 is_attached()
+{
+    static bool _v = false;
+    return _v;
+}
+
+bool&
+is_pre_attach_mode()
 {
     static bool _v = false;
     return _v;
