@@ -6,6 +6,7 @@ CrayPAT
 dl
 durations
 Dyninst
+enp
 Kokkos
 KokkosP
 librocprof
@@ -27,11 +28,14 @@ polymorphism
 POSIX
 ppc
 proc
+proto
 Pthreads
 rocDecode
+rocdecode
 ROCprofiler
 ROCPROFSYS
 rocJPEG
+rocjpeg
 ROCTX
 roctx
 rpath

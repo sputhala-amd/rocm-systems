@@ -218,6 +218,30 @@ get_operations_impl(const std::unordered_set<int32_t>& _complete,
 
 }  // namespace
 
+/// @brief Return the version of the rocprofiler-sdk
+/// @return The version of the rocprofiler-sdk or 0 if not initialized
+version_info&
+get_version()
+{
+    static auto _version = version_info{ 0 };
+
+    if(_version.formatted == 0)
+    {
+        uint32_t _major = 0;
+        uint32_t _minor = 0;
+        uint32_t _patch = 0;
+
+        ROCPROFILER_CALL(rocprofiler_get_version(&_major, &_minor, &_patch));
+
+        _version.major     = _major;
+        _version.minor     = _minor;
+        _version.patch     = _patch;
+        _version.formatted = _major * 10000 + _minor * 100 + _patch;
+    }
+
+    return _version;
+}
+
 void
 config_settings(const std::shared_ptr<settings>& _config)
 {
@@ -317,11 +341,15 @@ config_settings(const std::shared_ptr<settings>& _config)
     auto _domain_description =
         JOIN("", "Specification of ROCm domains to trace/profile. Choices: ",
              join::join(join::array_config{ ", ", "", "" }, _domain_choices));
+    auto _domain_defaults = std::string{ "hip_runtime_api,marker_api,kernel_dispatch,"
+                                         "memory_copy,scratch_memory" };
+
+#    if(ROCPROFILER_VERSION < 10000)
+    _domain_defaults.append(",page_migration");
+#    endif
 
     ROCPROFSYS_CONFIG_SETTING(std::string, "ROCPROFSYS_ROCM_DOMAINS", _domain_description,
-                              std::string{ "hip_runtime_api,marker_api,kernel_dispatch,"
-                                           "memory_copy,scratch_memory,page_migration" },
-                              "rocm", "rocprofiler-sdk")
+                              _domain_defaults, "rocm", "rocprofiler-sdk")
         ->set_choices(_domain_choices);
 
     ROCPROFSYS_CONFIG_SETTING(
@@ -350,28 +378,47 @@ std::unordered_set<rocprofiler_callback_tracing_kind_t>
 get_callback_domains()
 {
     const auto callback_tracing_info = rocprofiler::sdk::get_callback_tracing_names();
-    const auto supported = std::unordered_set<rocprofiler_callback_tracing_kind_t>
-    {
+    auto       supported = std::unordered_set<rocprofiler_callback_tracing_kind_t>{
         ROCPROFILER_CALLBACK_TRACING_HSA_CORE_API,
-            ROCPROFILER_CALLBACK_TRACING_HSA_AMD_EXT_API,
-            ROCPROFILER_CALLBACK_TRACING_HSA_IMAGE_EXT_API,
-            ROCPROFILER_CALLBACK_TRACING_HSA_FINALIZE_EXT_API,
-            ROCPROFILER_CALLBACK_TRACING_HIP_RUNTIME_API,
-            ROCPROFILER_CALLBACK_TRACING_HIP_COMPILER_API,
-            ROCPROFILER_CALLBACK_TRACING_MARKER_CORE_API,
-            ROCPROFILER_CALLBACK_TRACING_CODE_OBJECT,
-#    if(ROCPROFILER_VERSION_MAJOR == 0 && ROCPROFILER_VERSION_MINOR >= 7) ||             \
-        ROCPROFILER_VERSION_MAJOR >= 1
-            ROCPROFILER_CALLBACK_TRACING_ROCDECODE_API,
-            ROCPROFILER_CALLBACK_TRACING_ROCJPEG_API,
-#    endif
+        ROCPROFILER_CALLBACK_TRACING_HSA_AMD_EXT_API,
+        ROCPROFILER_CALLBACK_TRACING_HSA_IMAGE_EXT_API,
+        ROCPROFILER_CALLBACK_TRACING_HSA_FINALIZE_EXT_API,
+        ROCPROFILER_CALLBACK_TRACING_HIP_RUNTIME_API,
+        ROCPROFILER_CALLBACK_TRACING_HIP_COMPILER_API,
+        ROCPROFILER_CALLBACK_TRACING_MARKER_CORE_API,
+        ROCPROFILER_CALLBACK_TRACING_CODE_OBJECT,
     };
+
+    auto _version = get_version();
+    ROCPROFSYS_WARNING_IF(_version.formatted == 0,
+                          "Warning! rocprofiler-sdk version not initialized\n");
+
+#    if(ROCPROFILER_VERSION >= 600)
+    if(_version.formatted >= 600)
+    {
+        // Argument tracing is supported in rocprofiler-sdk 0.6.0 and later
+        supported.emplace(ROCPROFILER_CALLBACK_TRACING_RCCL_API);
+        supported.emplace(ROCPROFILER_CALLBACK_TRACING_ROCDECODE_API);
+    }
+#    endif
+#    if(ROCPROFILER_VERSION >= 700)
+    if(_version.formatted >= 700)
+    {
+        supported.emplace(ROCPROFILER_CALLBACK_TRACING_ROCJPEG_API);
+    }
+#    endif
 
     auto _data = std::unordered_set<rocprofiler_callback_tracing_kind_t>{};
     auto _domains =
         tim::delimit(config::get_setting_value<std::string>("ROCPROFSYS_ROCM_DOMAINS")
                          .value_or(std::string{}),
                      " ,;:\t\n");
+
+    if(config::get_use_rcclp() && _version.formatted >= 600)
+    {
+        // Translate ROCPROFSYS_USE_RCCLP to entry in ROCPROFSYS_ROCM_DOMAINS
+        _data.emplace(ROCPROFILER_CALLBACK_TRACING_RCCL_API);
+    }
 
     const auto valid_choices =
         settings::instance()->at("ROCPROFSYS_ROCM_DOMAINS")->get_choices();
@@ -429,11 +476,14 @@ std::unordered_set<rocprofiler_buffer_tracing_kind_t>
 get_buffered_domains()
 {
     const auto buffer_tracing_info = rocprofiler::sdk::get_buffer_tracing_names();
-    const auto supported = std::unordered_set<rocprofiler_buffer_tracing_kind_t>{
+    const auto supported           = std::unordered_set<rocprofiler_buffer_tracing_kind_t>
+    {
         ROCPROFILER_BUFFER_TRACING_KERNEL_DISPATCH,
-        ROCPROFILER_BUFFER_TRACING_MEMORY_COPY,
-        ROCPROFILER_BUFFER_TRACING_PAGE_MIGRATION,
-        ROCPROFILER_BUFFER_TRACING_SCRATCH_MEMORY,
+            ROCPROFILER_BUFFER_TRACING_MEMORY_COPY,
+#    if(ROCPROFILER_VERSION < 10000)
+            ROCPROFILER_BUFFER_TRACING_PAGE_MIGRATION,
+#    endif
+            ROCPROFILER_BUFFER_TRACING_SCRATCH_MEMORY,
     };
 
     auto _data = std::unordered_set<rocprofiler_buffer_tracing_kind_t>{};
@@ -577,6 +627,12 @@ void
 config_settings(const std::shared_ptr<settings>&)
 {}
 
+version_info&
+get_version()
+{
+    static auto _version = version_info{ 0 };
+    return _version;
+}
 }  // namespace rocprofiler_sdk
 }  // namespace rocprofsys
 

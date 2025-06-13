@@ -174,6 +174,20 @@ get_internal_libpath(const std::string& _lib)
     return filepath::realpath(rocprofsys::common::join("/", _dir, "..", "lib", _lib),
                               nullptr, false);
 }
+std::string
+get_internal_script_path(void)
+{
+    auto _exe = std::string_view{ realpath("/proc/self/exe", nullptr) };
+    auto _pos = _exe.find_last_of('/');
+    auto _dir = std::string{ "./" };
+    if(_pos != std::string_view::npos) _dir = _exe.substr(0, _pos);
+
+    auto _script_dir =
+        rocprofsys::common::join("/", _dir, "..", "libexec", "rocprofiler-systems");
+
+    return _script_dir;
+}
+
 }  // namespace
 
 bool
@@ -221,6 +235,9 @@ init_parser(parser_data& _data)
 
     _data.dl_libpath = get_realpath(get_internal_libpath("librocprof-sys-dl.so").c_str());
     _data.omni_libpath = get_realpath(get_internal_libpath("librocprof-sys.so").c_str());
+
+    auto _libexecpath = get_realpath(get_internal_script_path());
+    update_env(_data, "ROCPROFSYS_SCRIPT_PATH", _libexecpath, UPD_REPLACE);
 
 #if defined(ROCPROFSYS_USE_OMPT)
     if(!getenv("OMP_TOOL_LIBRARIES"))
@@ -457,6 +474,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
                 auto _d = p.get<bool>("device");
                 update_env(_data, "ROCPROFSYS_USE_PROCESS_SAMPLING", _h || _d);
                 update_env(_data, "ROCPROFSYS_CPU_FREQ_ENABLED", _h);
+                if(_h) update_env(_data, "ROCPROFSYS_USE_AMD_SMI", _d);
             });
 
         _data.processed_environs.emplace("host");
@@ -476,6 +494,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
                 auto _d = p.get<bool>("device");
                 update_env(_data, "ROCPROFSYS_USE_PROCESS_SAMPLING", _h || _d);
                 update_env(_data, "ROCPROFSYS_USE_AMD_SMI", _d);
+                if(_d) update_env(_data, "ROCPROFSYS_CPU_FREQ_ENABLED", _h);
             });
 
         _data.processed_environs.emplace("device");
@@ -543,10 +562,9 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
         _data.processed_environs.emplace("periods");
     }
 
-    strset_t _backend_choices = {
-        "all",     "kokkosp",         "mpip",        "ompt",       "rcclp",
-        "amd-smi", "rocprofiler-sdk", "mutex-locks", "spin-locks", "rw-locks"
-    };
+    strset_t _backend_choices = { "all",        "kokkosp", "mpip", "ompt",
+                                  "rcclp",      "amd-smi", "rocm", "mutex-locks",
+                                  "spin-locks", "rw-locks" };
 
 #if !defined(ROCPROFSYS_USE_MPI) && !defined(ROCPROFSYS_USE_MPI_HEADERS)
     _backend_choices.erase("mpip");
@@ -556,14 +574,10 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
     _backend_choices.erase("ompt");
 #endif
 
-#if !defined(ROCPROFSYS_USE_RCCL)
-    _backend_choices.erase("rcclp");
-#endif
-
 #if !defined(ROCPROFSYS_USE_ROCM)
     _backend_choices.erase("amd-smi");
-    _backend_choices.erase("rocprofiler-sdk");
     _backend_choices.erase("rocm");
+    _backend_choices.erase("rcclp");
 #endif
 
     if(gpu::device_count() == 0)
@@ -571,12 +585,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
         // remove GPU-specific backends
         _backend_choices.erase("rcclp");
         _backend_choices.erase("amd-smi");
-        _backend_choices.erase("rocprofiler-sdk");
         _backend_choices.erase("rocm");
-
-#if defined(ROCPROFSYS_USE_RCCL)
-        update_env(_data, "ROCPROFSYS_USE_RCCLP", false);
-#endif
 
 #if defined(ROCPROFSYS_USE_ROCM)
         update_env(_data, "ROCPROFSYS_USE_AMD_SMI", false);

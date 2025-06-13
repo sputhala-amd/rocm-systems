@@ -34,6 +34,7 @@
 #include "library/components/category_region.hpp"
 #include "library/rocprofiler-sdk/counters.hpp"
 #include "library/rocprofiler-sdk/fwd.hpp"
+#include "library/rocprofiler-sdk/rccl.hpp"
 #include "library/thread_info.hpp"
 #include "library/tracing.hpp"
 
@@ -364,7 +365,8 @@ tool_tracing_callback_stop(
                 if(config::get_perfetto_annotations())
                 {
                     tracing::add_perfetto_annotation(ctx, "begin_ns", _beg_ts);
-
+                    tracing::add_perfetto_annotation(ctx, "corr_id",
+                                                     record.correlation_id.internal);
                     for(const auto& [key, val] : args)
                         tracing::add_perfetto_annotation(ctx, key, val);
 
@@ -481,6 +483,17 @@ tool_tracing_callback(rocprofiler_callback_tracing_record_t record,
     auto ts = rocprofiler_timestamp_t{};
     ROCPROFILER_CALL(rocprofiler_get_timestamp(&ts));
 
+    const char* name = nullptr;
+    rocprofiler_query_callback_tracing_kind_operation_name(record.kind, record.operation,
+                                                           &name, nullptr);
+
+    auto info = std::stringstream{};
+    info << std::left << "tid=" << record.thread_id << ", cid=" << std::setw(3)
+         << record.correlation_id.internal << ", kind=" << std::setw(2) << record.kind
+         << ", operation=" << std::setw(3) << record.operation
+         << ", phase=" << record.phase << ", dt_nsec=" << std::setw(8) << ts
+         << ", name=" << name;
+
     if(record.phase == ROCPROFILER_CALLBACK_PHASE_ENTER)
     {
         user_data->value = ts;
@@ -508,14 +521,15 @@ tool_tracing_callback(rocprofiler_callback_tracing_record_t record,
                                             user_data, ts);
                 break;
             }
-#if(ROCPROFILER_VERSION_MAJOR == 0 && ROCPROFILER_VERSION_MINOR >= 7) ||                 \
-    ROCPROFILER_VERSION_MAJOR >= 1
+#if(ROCPROFILER_VERSION >= 600)
             case ROCPROFILER_CALLBACK_TRACING_ROCDECODE_API:
             {
                 tool_tracing_callback_start(category::rocm_rocdecode_api{}, record,
                                             user_data, ts);
                 break;
             }
+#endif
+#if(ROCPROFILER_VERSION >= 700)
             case ROCPROFILER_CALLBACK_TRACING_ROCJPEG_API:
             {
                 tool_tracing_callback_start(category::rocm_rocjpeg_api{}, record,
@@ -523,6 +537,12 @@ tool_tracing_callback(rocprofiler_callback_tracing_record_t record,
                 break;
             }
 #endif
+            case ROCPROFILER_CALLBACK_TRACING_RCCL_API:
+            {
+                tool_tracing_callback_start(category::rocm_rccl_api{}, record, user_data,
+                                            ts);
+                break;
+            }
             case ROCPROFILER_CALLBACK_TRACING_NONE:
             case ROCPROFILER_CALLBACK_TRACING_LAST:
             case ROCPROFILER_CALLBACK_TRACING_MARKER_CONTROL_API:
@@ -531,7 +551,11 @@ tool_tracing_callback(rocprofiler_callback_tracing_record_t record,
             case ROCPROFILER_CALLBACK_TRACING_SCRATCH_MEMORY:
             case ROCPROFILER_CALLBACK_TRACING_KERNEL_DISPATCH:
             case ROCPROFILER_CALLBACK_TRACING_MEMORY_COPY:
-            case ROCPROFILER_CALLBACK_TRACING_RCCL_API:
+#if(ROCPROFILER_VERSION >= 600)
+            case ROCPROFILER_CALLBACK_TRACING_OMPT:
+            case ROCPROFILER_CALLBACK_TRACING_MEMORY_ALLOCATION:
+            case ROCPROFILER_CALLBACK_TRACING_RUNTIME_INITIALIZATION:
+#endif
             {
                 ROCPROFSYS_CI_ABORT(true, "unhandled callback record kind: %i\n",
                                     record.kind);
@@ -593,14 +617,15 @@ tool_tracing_callback(rocprofiler_callback_tracing_record_t record,
                                            ts, _bt_data);
                 break;
             }
-#if(ROCPROFILER_VERSION_MAJOR == 0 && ROCPROFILER_VERSION_MINOR >= 7) ||                 \
-    ROCPROFILER_VERSION_MAJOR >= 1
+#if(ROCPROFILER_VERSION >= 600)
             case ROCPROFILER_CALLBACK_TRACING_ROCDECODE_API:
             {
                 tool_tracing_callback_stop(category::rocm_rocdecode_api{}, record,
                                            user_data, ts, _bt_data);
                 break;
             }
+#endif
+#if(ROCPROFILER_VERSION >= 700)
             case ROCPROFILER_CALLBACK_TRACING_ROCJPEG_API:
             {
                 tool_tracing_callback_stop(category::rocm_rocjpeg_api{}, record,
@@ -608,6 +633,13 @@ tool_tracing_callback(rocprofiler_callback_tracing_record_t record,
                 break;
             }
 #endif
+            case ROCPROFILER_CALLBACK_TRACING_RCCL_API:
+            {
+                tool_tracing_callback_rccl(record, user_data->value, ts);
+                tool_tracing_callback_stop(category::rocm_rccl_api{}, record, user_data,
+                                           ts, _bt_data);
+                break;
+            }
             case ROCPROFILER_CALLBACK_TRACING_NONE:
             case ROCPROFILER_CALLBACK_TRACING_LAST:
             case ROCPROFILER_CALLBACK_TRACING_MARKER_CONTROL_API:
@@ -616,7 +648,11 @@ tool_tracing_callback(rocprofiler_callback_tracing_record_t record,
             case ROCPROFILER_CALLBACK_TRACING_SCRATCH_MEMORY:
             case ROCPROFILER_CALLBACK_TRACING_KERNEL_DISPATCH:
             case ROCPROFILER_CALLBACK_TRACING_MEMORY_COPY:
-            case ROCPROFILER_CALLBACK_TRACING_RCCL_API:
+#if(ROCPROFILER_VERSION >= 600)
+            case ROCPROFILER_CALLBACK_TRACING_OMPT:
+            case ROCPROFILER_CALLBACK_TRACING_MEMORY_ALLOCATION:
+            case ROCPROFILER_CALLBACK_TRACING_RUNTIME_INITIALIZATION:
+#endif
             {
                 ROCPROFSYS_CI_ABORT(true, "unhandled callback record kind: %i\n",
                                     record.kind);
@@ -637,6 +673,12 @@ tool_tracing_callback(rocprofiler_callback_tracing_record_t record,
             get_kernel_dispatch_timestamps().emplace(
                 _data->dispatch_info.dispatch_id,
                 timing_interval{ _data->start_timestamp, _data->end_timestamp });
+        }
+        else
+        {
+            ROCPROFSYS_WARNING_F(
+                1, "tool_tracing_callback: unhandled PHASE_NONE callback record\n\t%s\n",
+                info.str().c_str());
         }
     }
     else
@@ -994,13 +1036,16 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* user_data)
 {
     auto domains = settings::instance()->at("ROCPROFSYS_ROCM_DOMAINS");
 
-    ROCPROFSYS_VERBOSE_F(1, "rocprof-sys ROCm Domains:\n");
+    ROCPROFSYS_VERBOSE_F(1, "Available ROCm Domains:\n");
     for(const auto& itr : domains->get_choices())
         ROCPROFSYS_VERBOSE_F(1, "- %s\n", itr.c_str());
 
     auto _callback_domains = rocprofiler_sdk::get_callback_domains();
     auto _buffered_domain  = rocprofiler_sdk::get_buffered_domains();
     auto _counter_events   = rocprofiler_sdk::get_rocm_events();
+    auto _version          = rocprofiler_sdk::get_version();
+    ROCPROFSYS_WARNING_IF(_version.formatted == 0,
+                          "Warning! rocprofiler-sdk version not initialized\n");
 
     auto* _data        = as_client_data(user_data);
     _data->client_fini = fini_func;
@@ -1028,12 +1073,14 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* user_data)
                 ROCPROFILER_CALLBACK_TRACING_HSA_FINALIZE_EXT_API,
                 ROCPROFILER_CALLBACK_TRACING_HIP_RUNTIME_API,
                 ROCPROFILER_CALLBACK_TRACING_HIP_COMPILER_API,
-#if(ROCPROFILER_VERSION_MAJOR == 0 && ROCPROFILER_VERSION_MINOR >= 7) ||                 \
-    ROCPROFILER_VERSION_MAJOR >= 1
+                ROCPROFILER_CALLBACK_TRACING_MARKER_CORE_API,
+                ROCPROFILER_CALLBACK_TRACING_RCCL_API,
+#if(ROCPROFILER_VERSION >= 600)
                 ROCPROFILER_CALLBACK_TRACING_ROCDECODE_API,
+#endif
+#if(ROCPROFILER_VERSION >= 700)
                 ROCPROFILER_CALLBACK_TRACING_ROCJPEG_API,
 #endif
-                ROCPROFILER_CALLBACK_TRACING_MARKER_CORE_API
         })
     {
         if(_callback_domains.count(itr) > 0)

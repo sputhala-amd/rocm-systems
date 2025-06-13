@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2022-2025 Advanced Micro Devices, Inc. All Rights Reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All Rights Reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,10 +20,17 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#pragma once
+#include "core/timemory.hpp"
 
-#include "core/defines.hpp"
-
-#if defined(ROCPROFSYS_USE_RCCL) && ROCPROFSYS_USE_RCCL > 0
-#    include <rccl/rccl.h>
+#if ROCPROFSYS_USE_ROCM > 0
+#    include <amd_smi/amdsmi.h>
 #endif
+
+namespace rocprofsys
+{
+namespace amd_smi
+{
+void
+config_settings(const std::shared_ptr<settings>&);
+}  // namespace amd_smi
+}  // namespace rocprofsys

@@ -124,9 +124,11 @@ get_initial_environment()
 
     auto _dl_libpath   = get_realpath(get_internal_libpath("librocprof-sys-dl.so"));
     auto _omni_libpath = get_realpath(get_internal_libpath("librocprof-sys.so"));
+    auto _libexecpath  = get_realpath(get_internal_script_path());
 
     update_env(_env, "LD_PRELOAD", _dl_libpath, UPD_APPEND);
     update_env(_env, "LD_LIBRARY_PATH", tim::filepath::dirname(_dl_libpath), UPD_APPEND);
+    update_env(_env, "ROCPROFSYS_SCRIPT_PATH", _libexecpath, UPD_REPLACE);
 
     auto _mode = get_env<std::string>("ROCPROFSYS_MODE", "sampling", false);
 
@@ -136,7 +138,6 @@ get_initial_environment()
     if(!getenv("OMP_TOOL_LIBRARIES"))
         update_env(_env, "OMP_TOOL_LIBRARIES", _dl_libpath, UPD_APPEND);
 #endif
-
     return _env;
 }
 
@@ -148,6 +149,20 @@ get_internal_libpath(const std::string& _lib)
     auto _dir = std::string{ "./" };
     if(_pos != std::string_view::npos) _dir = _exe.substr(0, _pos);
     return rocprofsys::common::join("/", _dir, "..", "lib", _lib);
+}
+
+std::string
+get_internal_script_path(void)
+{
+    auto _exe = std::string_view{ realpath("/proc/self/exe", nullptr) };
+    auto _pos = _exe.find_last_of('/');
+    auto _dir = std::string{ "./" };
+    if(_pos != std::string_view::npos) _dir = _exe.substr(0, _pos);
+
+    auto _script_dir =
+        rocprofsys::common::join("/", _dir, "..", "libexec", "rocprofiler-systems");
+
+    return _script_dir;
 }
 
 void
@@ -440,6 +455,7 @@ parse_args(int argc, char** argv, std::vector<char*>& _env)
             auto _d = p.get<bool>("device");
             update_env(_env, "ROCPROFSYS_USE_PROCESS_SAMPLING", _h || _d);
             update_env(_env, "ROCPROFSYS_CPU_FREQ_ENABLED", _h);
+            if(_h) update_env(_env, "ROCPROFSYS_USE_AMD_SMI", _d);
         });
     parser
         .add_argument({ "-D", "--device" },
@@ -451,6 +467,7 @@ parse_args(int argc, char** argv, std::vector<char*>& _env)
             auto _d = p.get<bool>("device");
             update_env(_env, "ROCPROFSYS_USE_PROCESS_SAMPLING", _h || _d);
             update_env(_env, "ROCPROFSYS_USE_AMD_SMI", _d);
+            if(_d) update_env(_env, "ROCPROFSYS_CPU_FREQ_ENABLED", _h);
         });
     parser
         .add_argument({ "-w", "--wait" },
@@ -722,11 +739,10 @@ parse_args(int argc, char** argv, std::vector<char*>& _env)
             }
         });
 
-    std::set<std::string> _backend_choices = {
-        "all",      "kokkosp",         "mpip",        "ompt",
-        "rcclp",    "amd-smi",         "mutex-locks", "spin-locks",
-        "rw-locks", "rocprofiler-sdk", "rocm"
-    };
+    std::set<std::string> _backend_choices = { "all",         "kokkosp",    "mpip",
+                                               "ompt",        "rcclp",      "amd-smi",
+                                               "mutex-locks", "spin-locks", "rw-locks",
+                                               "rocm" };
 
 #if !defined(ROCPROFSYS_USE_MPI) && !defined(ROCPROFSYS_USE_MPI_HEADERS)
     _backend_choices.erase("mpip");
@@ -736,14 +752,10 @@ parse_args(int argc, char** argv, std::vector<char*>& _env)
     _backend_choices.erase("ompt");
 #endif
 
-#if !defined(ROCPROFSYS_USE_RCCL)
-    _backend_choices.erase("rcclp");
-#endif
-
 #if !defined(ROCPROFSYS_USE_ROCM)
     _backend_choices.erase("rocm");
     _backend_choices.erase("amd-smi");
-    _backend_choices.erase("rocprofiler-sdk");
+    _backend_choices.erase("rcclp");
 #endif
 
     parser.start_group("BACKEND OPTIONS",

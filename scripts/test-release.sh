@@ -1,5 +1,27 @@
 #!/bin/bash -e
 
+# MIT License
+#
+# Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
 SCRIPT_DIR=$(realpath $(dirname ${BASH_SOURCE[0]}))
 cd $(dirname ${SCRIPT_DIR})
 echo -e "Working directory: $(pwd)"
@@ -96,10 +118,21 @@ setup-env()
 
 test-install()
 {
+    ROCPROFSYS_MODULE_PATH="${1}/lib/python/site-packages/rocprofsys"
     verbose-run rocprof-sys-instrument --help
     verbose-run rocprof-sys-avail --help
     verbose-run rocprof-sys-avail --all
-    if [ -d "${1}/lib/python/site-packages/rocprofsys" ]; then
+
+    if [ -d $ROCPROFSYS_MODULE_PATH ]; then
+        verbose-run which python3
+        verbose-run python3 --version
+        PYTHON_VERSION=$(python3 -c "import sys; print(f'python-{sys.version_info.major}{sys.version_info.minor}')")
+
+        if [ -z "$(find $ROCPROFSYS_MODULE_PATH -name "*${PYTHON_VERSION}*" -print -quit)" ]; then
+            echo "Error: No library found for Python version ${PYTHON_VERSION} in $ROCPROFSYS_MODULE_PATH"
+            exit 1
+        fi
+
         verbose-run rocprof-sys-python --help
     fi
 }

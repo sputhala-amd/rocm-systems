@@ -1,3 +1,25 @@
+# MIT License
+#
+# Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
 # -------------------------------------------------------------------------------------- #
 #
 # openmp tests
@@ -52,7 +74,19 @@ rocprofiler_systems_add_validation_test(
     PERFETTO_METRIC "rocm_kernel_dispatch"
     PERFETTO_FILE "perfetto-trace.proto"
     LABELS "openmp;openmp-target"
-    ARGS --label-substrings Z4vmulIiEvPT_S1_S1_i_l51.kd -c 12 -d 0 -p)
+    ARGS --label-substrings
+         Z4vmulIiEvPT_S1_S1_i_l51.kd
+         Z4vmulIfEvPT_S1_S1_i_l51.kd
+         Z4vmulIdEvPT_S1_S1_i_l51.kd
+         -c
+         4
+         4
+         4
+         -d
+         0
+         0
+         0
+         -p)
 
 set(_ompt_sampling_environ
     "${_ompt_environment}"
