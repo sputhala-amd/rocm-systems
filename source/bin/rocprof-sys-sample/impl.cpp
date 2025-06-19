@@ -353,19 +353,13 @@ parse_args(int argc, char** argv, std::vector<char*>& _env)
 %{INDENT}%    0     avoid triggering the bug, potentially at the cost of reduced performance
 %{INDENT}%    1     do not modify how ROCm is notified about kernel completion)";
 
+    const auto* _attach_desc = 
+        R"(Attach to a running process. This option requires the PID of the process to attach to.)";
+
     const auto* _trace_policy_desc =
         R"(Policy for new data when the buffer size limit is reached:
     %{INDENT}%- discard     : new data is ignored
     %{INDENT}%- ring_buffer : new data overwrites oldest data)";
-
-    const auto* _pre_attach_desc =
-        R"(Launch the application in pre-attach mode. This mode sets up and configures the profiling tools without initiating them. 
-           Applications running in pre-attach mode can later be profiled by executing rocprof-sys-sample with the --attach option. 
-           Please note that using pre-attach mode may negatively impact application performance. The extent of this impact varies based 
-           on the specific profiling configuration and the nature of the application.)";
-
-    const auto* _attach_desc =
-        R"(Attach to a running process launched in pre-attach mode. )";
 
     parser.set_use_color(true);
     parser.enable_help();
@@ -844,19 +838,18 @@ parse_args(int argc, char** argv, std::vector<char*>& _env)
             update_env(_env, "HSA_ENABLE_INTERRUPT", p.get<int>("hsa-interrupt"));
         });
 
-    parser.add_argument({ "--pre-attach" }, _pre_attach_desc)
-        .count(0)
-        .action([&](parser_t& p) { update_env(_env, "ROCPROFSYS_ATTACH", true); });
-
-    parser.add_argument({ "--attach" }, _attach_desc)
+    parser.add_argument({"-p"}, _attach_desc)
         .count(1)
         .dtype("pid")
         .action([&](parser_t& p) {
-            auto _v = p.get<std::deque<std::string>>("attach");
+            auto _v = p.get<std::deque<std::string>>("p");
+            std::cout << "HIIII" << std::endl;
             if(!_v.empty())
             {
-                *(get_attach_pid()) = std::stoi(_v.front());
+                int pid = std::stoi(_v.front());
                 _v.pop_front();
+                update_env(_env, "ROCPROFSYS_ATTACH_PID", pid);
+                *(get_pid()) = pid;
             }
         });
     parser.end_group();
@@ -898,20 +891,9 @@ parse_args(int argc, char** argv, std::vector<char*>& _env)
     return _outv;
 }
 
-int*
-get_attach_pid()
+size_t*
+get_pid()
 {
-    static int _v = -1;
-    return &_v;
-}
-
-int
-attach(int _pid)
-{
-    kill(_pid, 10);
-    stream(std::cout, color::info())
-        << "Entering into attach mode. Press any key to detach.\n";
-    std::cin.get();
-    kill(_pid, 10);
-    return 0;
+    static size_t _pid = 0;
+    return &_pid;
 }

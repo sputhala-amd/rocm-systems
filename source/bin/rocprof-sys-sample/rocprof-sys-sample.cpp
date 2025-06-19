@@ -27,6 +27,7 @@
 #include <string_view>
 #include <unistd.h>
 
+#include "rocprof-sys-attach/attach.hpp"
 int
 main(int argc, char** argv)
 {
@@ -53,13 +54,12 @@ main(int argc, char** argv)
             _argv.emplace_back(argv[i]);
     }
 
-    if(int _pid = *(get_attach_pid()); _pid > 0)
-    {
-        return attach(_pid);
-    }
-
     print_updated_environment(_env);
 
+    if(*(get_pid()) > 0){
+        // If the pid is greate than 0, it means we are running in the attach mode.
+        rocprofsys_attach(*(get_pid()));
+    }
     if(!_argv.empty())
     {
         print_command(_argv);

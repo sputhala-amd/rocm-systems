@@ -25,6 +25,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <cstdint>
 
 enum update_mode : int
 {
@@ -63,8 +64,5 @@ remove_env(std::vector<char*>& _environ, std::string_view _env_var);
 std::vector<char*>
 parse_args(int argc, char** argv, std::vector<char*>& envp);
 
-int*
-get_attach_pid();
-
-int
-attach(int _pid);
+size_t*
+get_pid();

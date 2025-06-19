@@ -511,6 +511,13 @@ rocprofsys_init_tooling_hidden(void)
     // ideally these have already been started
     rocprofsys_preinit_hidden();
 
+#if ROCPROFSYS_USE_ROCM > 0
+    if(tim::get_env<uint32_t>("ROCPROFSYS_ATTACH_PID", 0) > 0)
+    {
+        ROCPROFSYS_VERBOSE_F(1, "Setting up ROCm tracing...\n");
+        rocprofiler_sdk::setup();
+    }
+#endif
     // start these gotchas once settings have been initialized
     if(get_init_bundle()) get_init_bundle()->start();
 
