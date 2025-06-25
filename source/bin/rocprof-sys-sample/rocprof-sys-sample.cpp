@@ -27,7 +27,6 @@
 #include <string_view>
 #include <unistd.h>
 
-#include "rocprof-sys-attach/attach.hpp"
 int
 main(int argc, char** argv)
 {
@@ -38,7 +37,7 @@ main(int argc, char** argv)
     {
         auto _arg = std::string_view{ argv[i] };
         if(_arg == "--" || _arg == "-?" || _arg == "-h" || _arg == "--help" ||
-           _arg == "--version")
+           _arg == "--version" || _arg == "-p")
             _has_double_hyphen = true;
     }
 
@@ -58,7 +57,7 @@ main(int argc, char** argv)
 
     if(*(get_pid()) > 0){
         // If the pid is greate than 0, it means we are running in the attach mode.
-        rocprofsys_attach(*(get_pid()));
+        return attach(_env);
     }
     if(!_argv.empty())
     {

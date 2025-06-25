@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <iostream>
 #include <cstdint>
+#include <sys/ptrace.h>
 
 #ifndef ROCP_TRACE
 #define ROCP_TRACE std::cout
@@ -36,6 +37,7 @@ class PTraceSession
 
     bool call_function(const std::string& library, const std::string& symbol);
     bool call_function(const std::string& library, const std::string& symbol, void* first);
+    bool call_function(const std::string& library, const std::string& symbol, void* first, void* second);
 
     bool stop();
     bool cont();

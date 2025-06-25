@@ -2,9 +2,9 @@
 #include "common/static_object.hpp"
 
 extern "C" {
-void
-rocprofsys_attach(size_t pid) __attribute__((visibility("default")));
+int
+rocprofsys_attach(size_t pid, std::vector<char*> env) __attribute__((visibility("default")));
 
 void
-detach() __attribute__((visibility("default")));
+rocprofsys_detach() __attribute__((visibility("default")));
 }

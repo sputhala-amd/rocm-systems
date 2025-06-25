@@ -248,7 +248,7 @@ configure_settings(bool _init)
                                ROCPROFSYS_ROCM_VERSION_PATCH);
 #endif
 
-    is_pre_attach_mode() = tim::get_env("ROCPROFSYS_ATTACH", false);
+    is_pre_attach_mode() = tim::get_env("ROCPROFSYS_ATTACH_PID", 0) !=0;
 
     auto _config = *get_config_impl();
 

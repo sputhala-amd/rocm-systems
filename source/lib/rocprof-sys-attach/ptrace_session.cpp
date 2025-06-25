@@ -1,13 +1,14 @@
 #include "ptrace_session.hpp"
 
 #include <dlfcn.h>
-#include <sys/ptrace.h>
 #include <sys/mman.h>
 #include <sys/user.h>
 #include <sys/wait.h>
 #include <fstream>
 #include <chrono>
 #include <thread>
+#include <cstring>
+#include <iostream>
 
 #define ROCPROFSYS_ATTACH_LOG(LEVEL, ...)                                            \
 {                                                                                    \
@@ -18,12 +19,17 @@
 }
 
 #define PTRACE_CALL(op, pid, addr, data)                                                                                                \
+[&]() {\
 ROCPROFSYS_ATTACH_LOG(2, "ptrace call params(%d, %li, %zu, %zu)\n", op, pid, (size_t)addr, (size_t)data);                                  \
-if (errno=0, ptrace(op, pid, addr, data); errno != 0)                                                                                   \
+errno = 0;\
+long ret = ptrace(op, pid, addr, data); \
+if (ret == -1)                                                                                   \
 {                                                                                                                                       \
-    fprintf(stderr, "[rocprof-sys][attach]> Ptrace call failed :: error %s :: op %d :: addr %zu \n", dlerror() , op, (size_t)addr);             \
+    fprintf(stderr, "[rocprof-sys][attach]> Ptrace call failed :: error %s :: op %d :: addr %zu \n", strerror(errno) , op, (size_t)addr);             \
     return false;                                                                                                                       \
-}
+}\
+return true;\
+}();
 
 #define PTRACE_PEEK(pid, addr) \
 [&]() { \
@@ -31,7 +37,7 @@ if (errno=0, ptrace(op, pid, addr, data); errno != 0)                           
     ROCPROFSYS_ATTACH_LOG(2, "ptrace call params(%li, %zu)\n", pid, (size_t)addr);                                  \
     if (errno=0, retval=ptrace(PTRACE_PEEKDATA, pid, addr, NULL); errno != 0)                                                   \
     {                                                                                                                           \
-        fprintf(stderr, "[rocprof-sys][attach]> Ptrace call failed :: error %s :: addr %ld \n", dlerror() , addr);          \
+        fprintf(stderr, "[rocprof-sys][attach]> Ptrace call failed :: error %s :: addr %ld \n", strerror(errno) , addr);          \
     }                                                                                                                           \
     return retval; \
 }();
@@ -296,6 +302,7 @@ bool PTraceSession::simple_munmap(void*& addr, size_t length)
 
 bool PTraceSession::call_function(const std::string& library, const std::string& symbol)
 {
+
     return call_function(library, symbol, nullptr);
 }
 
@@ -304,6 +311,11 @@ bool PTraceSession::call_function(const std::string& library, const std::string&
 // Correctly implementing this would require reimplementing the x64 calling convention.
 // Probably not worth it.
 bool PTraceSession::call_function(const std::string& library, const std::string& symbol, void* first)
+{
+    return call_function(library, symbol, first, nullptr);
+}
+
+bool PTraceSession::call_function(const std::string& library, const std::string& symbol, void* first, void* second)
 {
     if (!attached)
     {
@@ -331,7 +343,14 @@ bool PTraceSession::call_function(const std::string& library, const std::string&
     // symbol(first)
     struct user_regs_struct newregs = oldregs;
     newregs.rax = reinterpret_cast<size_t>(target_addr); // target function
-    newregs.rdi = reinterpret_cast<size_t>(first); // first parameter
+
+    //Beginning of parameters
+    newregs.rdi = reinterpret_cast<size_t>(first);  // by x86 convention, the first parameter is passed in rdi
+    newregs.rsi = reinterpret_cast<size_t>(second); // by x86 convention, the second parameter is passed in rsi 
+
+  
+    // Align stack for ABI  
+    newregs.rsp = (oldregs.rsp - 8) & ~0xF; 
 
     // ff d0  call rax
     // cc     int3
@@ -343,6 +362,9 @@ bool PTraceSession::call_function(const std::string& library, const std::string&
     {
         return false;
     }
+
+    newregs.rip = oldregs.rip;
+
     // set syscall registers
     PTRACE_CALL(PTRACE_SETREGS, pid, NULL, &newregs);
     // restart execution
@@ -430,7 +452,7 @@ bool PTraceSession::find_symbol(void*& addr, const std::string& library, const s
     if (!find_library(hostlibraryaddr, getpid(), library))
     {
         ROCP_TRACE << "host does not have the library " << library << " loaded. Attempting to dlopen" << std::endl;
-        libraryaddr = dlopen(library.c_str(), RTLD_LAZY);
+        libraryaddr = dlopen(library.c_str(), RTLD_NOW | RTLD_GLOBAL);
         if (!libraryaddr)
         {
             ROCP_ERROR << "host couldn't dlopen " << library<< std::endl;
@@ -456,6 +478,8 @@ bool PTraceSession::find_symbol(void*& addr, const std::string& library, const s
             return false;
         }
     }
+
+
 
     size_t offset = reinterpret_cast<size_t>(symboladdr) - reinterpret_cast<size_t>(hostlibraryaddr);
     ROCP_TRACE << "offset of " << symbol << " into " << library << " calculated as " << offset<< std::endl;

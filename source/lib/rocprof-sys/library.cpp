@@ -146,7 +146,7 @@ attach_detach_handler()
         rocprofsys_init_tooling_hidden();
         return;
     }
-    rocprofsys_finalize_hidden();
+    rocprofsys_finalize();
 }
 auto
 ensure_finalization(bool _static_init = false)
@@ -1019,8 +1019,6 @@ rocprofsys_finalize_hidden(void)
     tim::signals::enable_signal_detection(
         { tim::signals::sys_signal::SegFault, tim::signals::sys_signal::Stop },
         [](int) {});
-
-    if(_is_attach) return;
 
     common::destroy_static_objects();
 }

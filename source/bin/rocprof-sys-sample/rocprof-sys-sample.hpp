@@ -66,3 +66,6 @@ parse_args(int argc, char** argv, std::vector<char*>& envp);
 
 size_t*
 get_pid();
+
+int
+attach(std::vector<char*> env);

@@ -26,6 +26,7 @@
 #include "common/environment.hpp"
 #include "common/join.hpp"
 #include "common/setup.hpp"
+#include "rocprof-sys-attach/attach.hpp"
 
 #include <timemory/environment.hpp>
 #include <timemory/log/color.hpp>
@@ -896,4 +897,10 @@ get_pid()
 {
     static size_t _pid = 0;
     return &_pid;
+}
+
+int
+attach(std::vector<char*> env)
+{
+    return rocprofsys_attach(*(get_pid()), env);
 }

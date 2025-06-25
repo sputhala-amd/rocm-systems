@@ -1412,7 +1412,7 @@ extern "C"
     void rocprofsys_set_main(main_func_t) ROCPROFSYS_INTERNAL_API;
 
     int rocprofsys_dl_attach(const char* env_buff) ROCPROFSYS_PUBLIC_API;
-    void rocprofsys_dl_detach(void) ROCPROFSYS_PUBLIC_API; 
+    int rocprofsys_dl_detach(void* foo) ROCPROFSYS_PUBLIC_API; 
 
     void rocprofsys_set_main_init(init_func_t _init_real)
     {
@@ -1600,9 +1600,13 @@ extern "C"
         return 0;
     }
 
-    void rocprofsys_dl_detach()
+    int rocprofsys_dl_detach(void* foo)
     {   
+        ROCPROFSYS_DL_LOG(0, "%s\n", __FUNCTION__);
+        ROCPROFSYS_DL_LOG(0, "Trying to detach and finalize.\n");
+
         rocprofsys_pop_trace(std::string{}.c_str());
         rocprofsys_finalize();
+        return 0;
     }
 }  // extern "C"

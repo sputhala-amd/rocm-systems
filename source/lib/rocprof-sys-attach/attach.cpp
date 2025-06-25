@@ -21,9 +21,8 @@
 // SOFTWARE.
 #include <memory>
 #include "ptrace_session.hpp"
-
+#include <signal.h>
 #include "attach.hpp"
-extern char **environ;
 
 namespace common = ::rocprofsys::common;
 
@@ -55,8 +54,8 @@ namespace
 extern "C" 
 {
 
-void
-rocprofsys_attach(size_t pid) 
+int
+rocprofsys_attach(size_t pid, std::vector<char*> env) 
 {  
     std::cout << "Process id of host: " << getpid() << std::endl;
     std::cout << "Attachment library called for pid " << pid << std::endl;
@@ -75,10 +74,8 @@ rocprofsys_attach(size_t pid)
     std::vector<uint8_t> environment_buffer(4);
     {
         uint32_t var_count = 0;
-        char** invars = environ;
-        for (; *invars; invars++)
+        for (char* var: env)
         {
-            const char* var = *invars;
             if (strncmp("ROCPROF", var, 7) != 0)
             {
                 continue;
@@ -133,15 +130,30 @@ rocprofsys_attach(size_t pid)
     ROCP_TRACE << "wrote library name to target process" << std::endl;
 
     //now we dlopen
-    ptrace_session->call_function("libc.so", "dlopen", libname_buffer_addr);
+    ptrace_session->call_function("libc.so", "dlopen", libname_buffer_addr, (void*) 1); 
     // execute the attach function with the buffer addr as parameter
     ptrace_session->call_function("librocprof-sys-dl.so", "rocprofsys_dl_attach", environment_buffer_addr);
+    //TODO: call other APIs from the register library to properly restore the program state?
+    ptrace_session->stop();
+    ptrace_session->detach();
+
+    std::cout << "Entering into attach mode. Press any key to detach.\n";
+    std::cin.get();
+
+    kill(pid, 10);
+    // ptrace_session->attach();
+    // ptrace_session->call_function("librocprof-sys-dl.so", "rocprofsys_dl_detach", nullptr);
+    // ptrace_session->stop();
+    // ptrace_session->detach();
+    // ptrace_session.reset();
+    return 0;
 }
 
 void
-detach()
+rocprofsys_detach()
 {
-    ptrace_session->call_function("librocprof-sys-dl.so", "rocprofiler_register_detach");
+    //TODO: call other APIs from the register library to properly restore the program state?
+    ptrace_session->call_function("librocprof-sys-dl.so", "rocprofsys_dl_detach", nullptr);
     ptrace_session->stop();
     ptrace_session->detach();
     ptrace_session.reset();
