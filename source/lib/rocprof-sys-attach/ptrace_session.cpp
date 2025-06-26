@@ -1,6 +1,5 @@
 #include "ptrace_session.hpp"
 
-#include <dlfcn.h>
 #include <sys/mman.h>
 #include <sys/user.h>
 #include <sys/wait.h>
@@ -149,7 +148,6 @@ bool PTraceSession::swap(
     }
     return write(addr, in_data, size);
 }
-
 
 bool PTraceSession::simple_mmap(void*& addr, size_t length)
 {
@@ -317,6 +315,11 @@ bool PTraceSession::call_function(const std::string& library, const std::string&
 
 bool PTraceSession::call_function(const std::string& library, const std::string& symbol, void* first, void* second)
 {
+    return call_function(library, symbol, first, second, nullptr);
+}
+
+bool PTraceSession::call_function(const std::string& library, const std::string& symbol, void* first, void* second, unsigned long long* ret)
+{
     if (!attached)
     {
         // log - called while not attached
@@ -339,7 +342,7 @@ bool PTraceSession::call_function(const std::string& library, const std::string&
     void* target_addr;
     find_symbol(target_addr, library, symbol);
 
-    // construct registers to call a function with 1 parameter
+    // construct registers to call a function
     // symbol(first)
     struct user_regs_struct newregs = oldregs;
     newregs.rax = reinterpret_cast<size_t>(target_addr); // target function
@@ -379,6 +382,10 @@ bool PTraceSession::call_function(const std::string& library, const std::string&
     // get registers to see return values
     struct user_regs_struct returnregs;
     PTRACE_CALL(PTRACE_GETREGS, pid, NULL, &returnregs);
+    if (ret)
+    {
+        *ret = returnregs.rax;
+    }
 
     // write in old opcodes
     if (!write(oldregs.rip, old_code, 3))
@@ -431,6 +438,40 @@ bool PTraceSession::find_library(void*& addr, int inpid, const std::string& libr
 
     addr = reinterpret_cast<void*>(std::stoull(line, nullptr, 16));
     target_library_addrs[searchname.str()] = addr;
+    return true;
+}
+
+unsigned long long PTraceSession::open_library(const std::string& library){
+    const char* libname_cstring = library.c_str();
+    std::vector<uint8_t> libname_buffer(
+        reinterpret_cast<const uint8_t*>(libname_cstring),
+        reinterpret_cast<const uint8_t*>(libname_cstring) + strlen(libname_cstring) + 1 // +1 for the null terminator
+    );
+    void* libname_buffer_addr = nullptr;
+    simple_mmap(libname_buffer_addr, libname_buffer.size());
+
+    // write that to buffer
+    stop();
+    write(reinterpret_cast<size_t>(libname_buffer_addr), libname_buffer, libname_buffer.size());
+    cont();
+    ROCP_TRACE << "wrote library name to target process" << std::endl;
+
+    unsigned long long handle = 0;
+    //now we dlopen
+    call_function("libc.so", "dlopen", libname_buffer_addr, (void*) 1, &handle);
+    return handle;
+}
+
+bool PTraceSession::close_library(const std::string& library){
+    unsigned long long handle = open_library(library); // ensure the library is opened
+    if (handle == 0)
+    {
+        ROCP_ERROR << "Failed to open library " << library << std::endl;
+        return false;
+    }
+    ROCP_TRACE << "handle for " << library << " is " << handle << std::endl;
+
+    call_function("libc.so", "dlclose", (void*) handle);
     return true;
 }
 

@@ -849,7 +849,7 @@ parse_args(int argc, char** argv, std::vector<char*>& _env)
             {
                 int pid = std::stoi(_v.front());
                 _v.pop_front();
-                update_env(_env, "ROCPROFSYS_ATTACH_PID", pid);
+                update_env(_env, "ROCPROFSYS_ATTACH_PID", getpid());
                 *(get_pid()) = pid;
             }
         });
@@ -902,5 +902,12 @@ get_pid()
 int
 attach(std::vector<char*> env)
 {
-    return rocprofsys_attach(*(get_pid()), env);
+    rocprofsys_attach(*(get_pid()), env);
+    //Press any key to detach
+    std::cout << "Press any key to detach from the process with PID: " << *(get_pid())
+              << std::endl;
+    std::cin.get();
+    
+    rocprofsys_detach(*(get_pid()));
+    return 0;
 }

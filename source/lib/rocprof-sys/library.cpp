@@ -87,6 +87,8 @@
 #include <stdexcept>
 #include <string_view>
 #include <utility>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 using namespace rocprofsys;
 
@@ -1015,6 +1017,21 @@ rocprofsys_finalize_hidden(void)
     if(!_is_attach) config::finalize();
 
     ROCPROFSYS_VERBOSE_F(0, "Finalized: %s\n", _finalization.as_string().c_str());
+
+    if(_is_attach)
+    {
+        //Send signal to controller to finish cleaning up
+        const char* NOTIFY_PIPE_PATH = "/tmp/rocprofsys_detach_pipe";  //Hardcoded path
+        int pipe_fd = open(NOTIFY_PIPE_PATH, O_WRONLY);  
+        if (pipe_fd != -1) {  
+            size_t _ = write(pipe_fd, "D", 1); // Write one byte to unblock the controller  
+            close(pipe_fd);  
+        } else {  
+            // Log an error if possible  
+            fprintf(stderr, "[TARGET ERROR] Could not open notify pipe.\n");  
+        } 
+        ROCPROFSYS_VERBOSE_F(1, "Resuming normal execution.\n");
+    }
 
     tim::signals::enable_signal_detection(
         { tim::signals::sys_signal::SegFault, tim::signals::sys_signal::Stop },

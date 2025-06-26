@@ -6,5 +6,5 @@ int
 rocprofsys_attach(size_t pid, std::vector<char*> env) __attribute__((visibility("default")));
 
 void
-rocprofsys_detach() __attribute__((visibility("default")));
+rocprofsys_detach(size_t pid) __attribute__((visibility("default")));
 }

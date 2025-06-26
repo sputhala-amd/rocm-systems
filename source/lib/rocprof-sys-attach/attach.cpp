@@ -22,10 +22,15 @@
 #include <memory>
 #include "ptrace_session.hpp"
 #include <signal.h>
+#include <fcntl.h>  
+#include <unistd.h>
+#include <cstdio>
+#include <sys/stat.h>
 #include "attach.hpp"
 
 namespace common = ::rocprofsys::common;
 
+const char* NOTIFY_PIPE_PATH = "/tmp/rocprofsys_detach_pipe";  
 namespace
 {
 #define ROCPROFILER_CALL(result, msg)                                                              \
@@ -50,6 +55,41 @@ namespace
     
 }
 
+namespace
+{
+void close_libraries(size_t pid){
+    const char* libraries[] = {
+        "librocprof-sys-dl.so",
+        "librocprof-sys.so",
+        "librocprof-sys-user.so"
+    };
+
+    ptrace_session = std::make_unique<rocprofsys::attach::PTraceSession>(pid);
+    ROCP_TRACE << "Attempting attachment to pid " << pid << std::endl;
+    if (!ptrace_session->attach())
+    {
+        ROCP_ERROR << "Attachment failed to pid " << pid << std::endl;
+    }
+    ROCP_TRACE << "Attachment success to pid " << pid << std::endl;
+    
+    for (const char* lib : libraries) {
+        if (!ptrace_session->close_library(lib)) {
+            ROCP_ERROR << "Failed to close library: " << lib << std::endl;
+        } else {
+            ROCP_TRACE << "Closed library: " << lib << std::endl;
+        }
+    }
+}
+
+void register_detach_complete_signal_handler(){
+    umask(0);
+    unlink(NOTIFY_PIPE_PATH);  
+    if (mkfifo(NOTIFY_PIPE_PATH, 0666) == -1) {  
+        std::cerr << "Failed to create named pipe: " << strerror(errno) << std::endl;  
+        return;  
+    }
+}
+} // namespace
 
 extern "C" 
 {
@@ -114,34 +154,18 @@ rocprofsys_attach(size_t pid, std::vector<char*> env)
     ptrace_session->call_function("librocprofiler-register.so", "rocprofiler_register_invoke_all_registrations", nullptr);
 
     // dlopen librocprof-sys-dl.so on the target 
-    // first we write the library name into the target memory
-    const char* libname_cstring = "librocprof-sys-dl.so";
-    std::vector<uint8_t> libname_buffer(
-        reinterpret_cast<const uint8_t*>(libname_cstring),
-        reinterpret_cast<const uint8_t*>(libname_cstring) + strlen(libname_cstring) + 1 // +1 for the null terminator
-    );
-    void* libname_buffer_addr = nullptr;
-    ptrace_session->simple_mmap(libname_buffer_addr, libname_buffer.size());
+    ptrace_session->open_library("librocprof-sys-dl.so");
 
-    // write that to buffer
-    ptrace_session->stop();
-    ptrace_session->write(reinterpret_cast<size_t>(libname_buffer_addr), libname_buffer, libname_buffer.size());
-    ptrace_session->cont();
-    ROCP_TRACE << "wrote library name to target process" << std::endl;
-
-    //now we dlopen
-    ptrace_session->call_function("libc.so", "dlopen", libname_buffer_addr, (void*) 1); 
     // execute the attach function with the buffer addr as parameter
     ptrace_session->call_function("librocprof-sys-dl.so", "rocprofsys_dl_attach", environment_buffer_addr);
     //TODO: call other APIs from the register library to properly restore the program state?
     ptrace_session->stop();
     ptrace_session->detach();
 
-    std::cout << "Entering into attach mode. Press any key to detach.\n";
-    std::cin.get();
+    register_detach_complete_signal_handler();
 
-    kill(pid, 10);
-    // ptrace_session->attach();
+    // // kill(pid, 10);
+    // // ptrace_session->attach();
     // ptrace_session->call_function("librocprof-sys-dl.so", "rocprofsys_dl_detach", nullptr);
     // ptrace_session->stop();
     // ptrace_session->detach();
@@ -150,13 +174,24 @@ rocprofsys_attach(size_t pid, std::vector<char*> env)
 }
 
 void
-rocprofsys_detach()
+rocprofsys_detach(size_t pid)
 {
-    //TODO: call other APIs from the register library to properly restore the program state?
-    ptrace_session->call_function("librocprof-sys-dl.so", "rocprofsys_dl_detach", nullptr);
-    ptrace_session->stop();
-    ptrace_session->detach();
-    ptrace_session.reset();
+    kill(pid,SIGUSR1); 
+    ROCP_TRACE << "Sent detach signal to pid " << pid << std::endl;
+    std::cout << "Waiting for detach completion via pipe..." << std::endl;  
+    int pipe_fd = open(NOTIFY_PIPE_PATH, O_RDONLY);  
+    if (pipe_fd == -1) {  
+        std::cerr << "Failed to open pipe for reading: " << strerror(errno) << std::endl;  
+        unlink(NOTIFY_PIPE_PATH); // Clean up  
+        return;  
+    }
+    char confirmation_buf[1];  
+    char _ = read(pipe_fd, confirmation_buf, 1); // This unblocks when the target writes.
+    close(pipe_fd);  
+    unlink(NOTIFY_PIPE_PATH); 
+    std::cout << "Detach confirmed" << std::endl;  
+    // close_libraries(pid);
+    // ROCP_TRACE << "Closed libraries after detach" << std::endl;
 }
 
 }
