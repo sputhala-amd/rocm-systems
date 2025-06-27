@@ -71,6 +71,11 @@ get_session(pid_t _pid = process::get_id())
 void
 setup()
 {
+    // Prevent re-entry
+    static bool _once = false;
+    if(_once) return;
+    _once = true;
+
     auto  args            = ::perfetto::TracingInitArgs{};
     auto  track_event_cfg = ::perfetto::protos::gen::TrackEventConfig{};
     auto& cfg             = get_config();
