@@ -38,6 +38,7 @@ enum class State : unsigned short
     Active,
     Finalized,
     Disabled,
+    Detached,
 };
 
 // used for specifying the state of rocprof-sys

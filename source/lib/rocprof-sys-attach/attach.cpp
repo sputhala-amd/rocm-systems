@@ -57,6 +57,10 @@ namespace
 
 namespace
 {
+void** get_dl_handle(){
+    static void* handle = nullptr;
+    return &handle;
+}
 void close_libraries(size_t pid){
     const char* libraries[] = {
         "librocprof-sys-dl.so",
@@ -79,6 +83,10 @@ void close_libraries(size_t pid){
             ROCP_TRACE << "Closed library: " << lib << std::endl;
         }
     }
+
+    ptrace_session->stop();
+    ptrace_session->detach();
+    ptrace_session.reset();
 }
 
 void register_detach_complete_signal_handler(){
@@ -154,7 +162,14 @@ rocprofsys_attach(size_t pid, std::vector<char*> env)
     ptrace_session->call_function("librocprofiler-register.so", "rocprofiler_register_invoke_all_registrations", nullptr);
 
     // dlopen librocprof-sys-dl.so on the target 
-    ptrace_session->open_library("librocprof-sys-dl.so");
+    void* handle = (void*) ptrace_session->open_library("librocprof-sys-dl.so");
+    if (handle == nullptr)
+    {
+        ROCP_ERROR << "Failed to open library librocprof-sys-dl.so in target process" << std::endl;
+        return -1;
+    }
+    ROCP_TRACE << "Opened library librocprof-sys-dl.so in target process at " << handle << std::endl;
+    *(get_dl_handle()) = handle;
 
     // execute the attach function with the buffer addr as parameter
     ptrace_session->call_function("librocprof-sys-dl.so", "rocprofsys_dl_attach", environment_buffer_addr);
@@ -190,8 +205,8 @@ rocprofsys_detach(size_t pid)
     close(pipe_fd);  
     unlink(NOTIFY_PIPE_PATH); 
     std::cout << "Detach confirmed" << std::endl;  
-    // close_libraries(pid);
-    // ROCP_TRACE << "Closed libraries after detach" << std::endl;
+    close_libraries(pid);
+    ROCP_TRACE << "Closed libraries after detach" << std::endl;
 }
 
 }

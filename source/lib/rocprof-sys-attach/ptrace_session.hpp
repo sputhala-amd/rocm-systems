@@ -42,6 +42,7 @@ class PTraceSession
     bool call_function(const std::string& library, const std::string& symbol, void* first, void* second, unsigned long long* ret);
     
     unsigned long long open_library(const std::string& library);
+    unsigned long long open_library(const std::string& library, int flag);
     bool close_library(const std::string& library);
 
     bool stop();

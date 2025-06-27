@@ -621,6 +621,9 @@ extern "C"
 
     void rocprofsys_init(const char* a, bool b, const char* c)
     {
+        ROCPROFSYS_DL_LOG(
+            2, "%s() :: get_inited: %s, get_finied:%s, get_active:%s\n", __FUNCTION__, dl::get_inited() ? "true" : "false",
+            dl::get_finied() ? "true" : "false", dl::get_active() ? "true" : "false");
         if(dl::get_inited() && dl::get_finied())
         {
             ROCPROFSYS_DL_LOG(
@@ -639,8 +642,14 @@ extern "C"
         if(dl::get_instrumented() < dl::InstrumentMode::PythonProfile)
             dl::rocprofsys_preinit();
 
+        ROCPROFSYS_DL_LOG(
+            2, "All checks passed -- trying to invoke\n");
         bool _invoked = false;
         ROCPROFSYS_DL_INVOKE_STATUS(_invoked, get_indirect().rocprofsys_init_f, a, b, c);
+        ROCPROFSYS_DL_LOG(
+            2, "Status of _invoked: %s\n",
+            (_invoked) ? "true" : "false"
+        )
 
         if(_invoked)
         {
@@ -651,6 +660,8 @@ extern "C"
             if(dl::get_instrumented() >= dl::InstrumentMode::None &&
                dl::get_instrumented() < dl::InstrumentMode::PythonProfile)
             {
+                ROCPROFSYS_DL_LOG(
+                    2, "%s() :: initializing rocprof-sys instrumentation\n", __FUNCTION__);
                 dl::rocprofsys_postinit((c) ? std::string{ c } : std::string{});
             }
         }
@@ -1391,7 +1402,7 @@ load_environment_buffer(const char* environment_buffer)
         const char* value = position;
         position += strlen(value) + 1;
 
-        ROCPROFSYS_DL_LOG(2, "Attachment adding environment variable: %s=%s", name, value);
+        ROCPROFSYS_DL_LOG(2, "Attachment adding environment variable: %s=%s\n", name, value);
         setenv(name, value, 1);        
     }
 }
@@ -1580,11 +1591,6 @@ extern "C"
 
 
         ::rocprofsys::dl::load_environment_buffer(env_buff);
-        // prevent re-entry
-        static int _reentry = 0;
-        if(_reentry > 0) return -1;
-        _reentry = 1;
-
         auto _pid = get_env("ROCPROFSYS_ATTACH_PID", -1);
 
         if (_pid < 0)
@@ -1597,6 +1603,10 @@ extern "C"
         rocprofsys_init(_mode.c_str(),
                         dl::get_instrumented() == dl::InstrumentMode::BinaryRewrite,
                         std::string{}.c_str());
+                        
+        rocprofsys::dl::get_inited() = false;
+        rocprofsys::dl::get_active() = false;
+        rocprofsys::dl::get_finied() = false;
         return 0;
     }
 
@@ -1607,6 +1617,12 @@ extern "C"
 
         rocprofsys_pop_trace(std::string{}.c_str());
         rocprofsys_finalize();
+
+        // Reset the state of the dl module
+
+
+        // Reload the instrumentation libraries
+
         return 0;
     }
 }  // extern "C"

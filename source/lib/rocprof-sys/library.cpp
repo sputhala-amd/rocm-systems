@@ -383,7 +383,12 @@ rocprofsys_init_library_hidden()
     ROCPROFSYS_CI_THROW(get_state() != State::PreInit, "State is not PreInit :: %s",
                         std::to_string(get_state()).c_str());
 
-    if(get_state() != State::PreInit || get_state() == State::Init || _once) return;
+    if(get_state() != State::PreInit || get_state() == State::Init || _once)
+    {
+        if (get_state() < State::Detached)
+            return;  // We want to allow this function to be called from detached state to
+                     // allow repeated attach
+    } 
     _once = true;
 
     ROCPROFSYS_SCOPED_THREAD_STATE(ThreadState::Internal);
@@ -401,6 +406,17 @@ rocprofsys_init_library_hidden()
         (void) _ss;
     }
 
+    // configure th_ settings
+    if (get_state() == State::Detached)
+    {
+        //If in detached state, we want to force reconfigure settings
+        config::set_attach_signal_handler(&attach_detach_handler);
+        configure_settings(true, true);
+        set_state(State::Init);
+        return;
+    }
+    configure_settings();
+
     set_state(State::Init);
 
     ROCPROFSYS_CI_THROW(get_state() != State::Init,
@@ -408,9 +424,6 @@ rocprofsys_init_library_hidden()
                         std::to_string(get_state()).c_str());
 
     ROCPROFSYS_CONDITIONAL_BASIC_PRINT_F(_debug_init, "Configuring settings...\n");
-
-    // configure the settings
-    configure_settings();
 
     auto _debug_value = get_debug();
     if(_debug_init) config::set_setting_value("ROCPROFSYS_DEBUG", true);
@@ -449,7 +462,9 @@ rocprofsys_init_tooling_hidden(void)
                                          std::to_string(get_state()).c_str());
     if(get_state() != State::PreInit || get_state() == State::Init || _once)
     {
-        if(!_is_attach || get_state() >= State::Active || _once) return false;
+        //We want to allow this function to be called from detached state to allow repeated attach
+        if (get_state() < State::Detached)
+            return false;
     }
     _once = true;
 
@@ -862,7 +877,7 @@ rocprofsys_finalize_hidden(void)
     // stop the main gotcha which shuts down the pthread gotchas
     if(get_init_bundle())
     {
-        ROCPROFSYS_DEBUG_F("Stopping main gotcha...\n");
+    ROCPROFSYS_DEBUG_F("Stopping main gotcha...\n");
         get_init_bundle()->stop();
 
         pthread_gotcha::shutdown();
@@ -1014,7 +1029,7 @@ rocprofsys_finalize_hidden(void)
             .c_str());
 
     debug::close_file();
-    if(!_is_attach) config::finalize();
+    config::finalize();
 
     ROCPROFSYS_VERBOSE_F(0, "Finalized: %s\n", _finalization.as_string().c_str());
 
@@ -1030,6 +1045,7 @@ rocprofsys_finalize_hidden(void)
             // Log an error if possible  
             fprintf(stderr, "[TARGET ERROR] Could not open notify pipe.\n");  
         } 
+        set_state(State::Detached);
         ROCPROFSYS_VERBOSE_F(1, "Resuming normal execution.\n");
     }
 

@@ -54,7 +54,7 @@ bool
 settings_are_configured() ROCPROFSYS_HOT;
 
 void
-configure_settings(bool _init = true);
+configure_settings(bool _init = true, bool _force = false);
 
 void
 configure_mode_settings(const std::shared_ptr<settings>&);

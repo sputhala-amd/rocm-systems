@@ -205,11 +205,12 @@ settings_are_configured()
 }
 
 void
-configure_settings(bool _init)
+configure_settings(bool _init, bool _force)
 {
     static bool _once = false;
-    if(_once) return;
+    if(_once && !_force) return;
     _once = true;
+
 
     if(settings_are_configured()) return;
 
@@ -1352,10 +1353,9 @@ configure_signal_handler(const std::shared_ptr<settings>& _config)
         _action.sa_handler = rocprofsys_trampoline_handler;
         sigaction(_dyninst_trampoline_signal, &_action, nullptr);
     }
-
     // Set up custom signals handlers for detaching.
     // Avoid using timeory's signal handler because it kills the process.
-    int              DETACH_SIG = 10;  // SIGUSR1
+    int DETACH_SIG = 10;  // SIGUSR1
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = rocprofsys_attach_detach_action;

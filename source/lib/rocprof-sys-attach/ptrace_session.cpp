@@ -440,8 +440,11 @@ bool PTraceSession::find_library(void*& addr, int inpid, const std::string& libr
     target_library_addrs[searchname.str()] = addr;
     return true;
 }
-
-unsigned long long PTraceSession::open_library(const std::string& library){
+unsigned long long PTraceSession::open_library(const std::string& library)
+{
+    return open_library(library, (RTLD_LAZY | RTLD_LOCAL));
+}
+unsigned long long PTraceSession::open_library(const std::string& library, int flag){
     const char* libname_cstring = library.c_str();
     std::vector<uint8_t> libname_buffer(
         reinterpret_cast<const uint8_t*>(libname_cstring),
@@ -458,20 +461,31 @@ unsigned long long PTraceSession::open_library(const std::string& library){
 
     unsigned long long handle = 0;
     //now we dlopen
-    call_function("libc.so", "dlopen", libname_buffer_addr, (void*) 1, &handle);
+    call_function("libc.so", "dlopen", libname_buffer_addr, (void*) flag, &handle);
     return handle;
 }
 
 bool PTraceSession::close_library(const std::string& library){
-    unsigned long long handle = open_library(library); // ensure the library is opened
-    if (handle == 0)
-    {
-        ROCP_ERROR << "Failed to open library " << library << std::endl;
-        return false;
-    }
-    ROCP_TRACE << "handle for " << library << " is " << handle << std::endl;
+    void* handle =(void*) open_library(library); // ensure the library is opened
+    ROCP_TRACE << "closed library " << library << " with handle " << handle << std::endl; 
+    // if (handle == nullptr)
+    // {
+    //     ROCP_ERROR << "Failed to open library " << library << std::endl;
+    //     return false;
+    // }
+    // ROCP_TRACE << "handle for " << library << " is " << handle << std::endl;
+    // call_function("libc.so", "dlclose", handle);
 
-    call_function("libc.so", "dlclose", (void*) handle);
+    // while (handle != 0)
+    // {
+    //     // wait for the library to be opened
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    //     handle = (void*) open_library(library); // retry
+    //     call_function("libc.so", "dlclose", (void*) handle);
+    //     call_function("libc.so", "dlclose", (void*) handle);
+    //     ROCP_TRACE << "closed library " << library << " with handle " << handle << std::endl;
+    // }
+
     return true;
 }
 
