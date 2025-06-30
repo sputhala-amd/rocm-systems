@@ -249,7 +249,7 @@ configure_settings(bool _init, bool _force)
                                ROCPROFSYS_ROCM_VERSION_PATCH);
 #endif
 
-    is_pre_attach_mode() = tim::get_env("ROCPROFSYS_ATTACH_PID", 0) !=0;
+    is_attach_mode() = tim::get_env("ROCPROFSYS_ATTACH_PID", 0) !=0;
 
     auto _config = *get_config_impl();
 
@@ -1223,7 +1223,7 @@ rocprofsys_exit_action(int nsig)
 void
 rocprofsys_attach_detach_action(int, siginfo_t*, void*)
 {
-    if(!config::is_pre_attach_mode())
+    if(!config::is_attach_mode())
     {
         ROCPROFSYS_BASIC_PRINT(R"(
     EEEEEEEEEEEEEEEEEEEEEERRRRRRRRRRRRRRRRR   RRRRRRRRRRRRRRRRR        OOOOOOOOO     RRRRRRRRRRRRRRRRR   
@@ -1819,14 +1819,14 @@ get_mode()
 }
 
 bool&
-is_attached()
+is_mpi_attached()
 {
     static bool _v = false;
     return _v;
 }
 
 bool&
-is_pre_attach_mode()
+is_attach_mode()
 {
     static bool _v = false;
     return _v;

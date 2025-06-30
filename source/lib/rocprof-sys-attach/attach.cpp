@@ -61,35 +61,8 @@ void** get_dl_handle(){
     static void* handle = nullptr;
     return &handle;
 }
-void close_libraries(size_t pid){
-    const char* libraries[] = {
-        "librocprof-sys-dl.so",
-        "librocprof-sys.so",
-        "librocprof-sys-user.so"
-    };
 
-    ptrace_session = std::make_unique<rocprofsys::attach::PTraceSession>(pid);
-    ROCP_TRACE << "Attempting attachment to pid " << pid << std::endl;
-    if (!ptrace_session->attach())
-    {
-        ROCP_ERROR << "Attachment failed to pid " << pid << std::endl;
-    }
-    ROCP_TRACE << "Attachment success to pid " << pid << std::endl;
-    
-    for (const char* lib : libraries) {
-        if (!ptrace_session->close_library(lib)) {
-            ROCP_ERROR << "Failed to close library: " << lib << std::endl;
-        } else {
-            ROCP_TRACE << "Closed library: " << lib << std::endl;
-        }
-    }
-
-    ptrace_session->stop();
-    ptrace_session->detach();
-    ptrace_session.reset();
-}
-
-void register_detach_complete_signal_handler(){
+void prepare_for_detach(){
     umask(0);
     unlink(NOTIFY_PIPE_PATH);  
     if (mkfifo(NOTIFY_PIPE_PATH, 0666) == -1) {  
@@ -177,14 +150,7 @@ rocprofsys_attach(size_t pid, std::vector<char*> env)
     ptrace_session->stop();
     ptrace_session->detach();
 
-    register_detach_complete_signal_handler();
-
-    // // kill(pid, 10);
-    // // ptrace_session->attach();
-    // ptrace_session->call_function("librocprof-sys-dl.so", "rocprofsys_dl_detach", nullptr);
-    // ptrace_session->stop();
-    // ptrace_session->detach();
-    // ptrace_session.reset();
+    prepare_for_detach();
     return 0;
 }
 
@@ -205,8 +171,6 @@ rocprofsys_detach(size_t pid)
     close(pipe_fd);  
     unlink(NOTIFY_PIPE_PATH); 
     std::cout << "Detach confirmed" << std::endl;  
-    close_libraries(pid);
-    ROCP_TRACE << "Closed libraries after detach" << std::endl;
 }
 
 }

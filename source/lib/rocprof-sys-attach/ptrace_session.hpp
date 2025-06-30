@@ -43,7 +43,6 @@ class PTraceSession
     
     unsigned long long open_library(const std::string& library);
     unsigned long long open_library(const std::string& library, int flag);
-    bool close_library(const std::string& library);
 
     bool stop();
     bool cont();

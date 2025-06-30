@@ -140,7 +140,7 @@ finalization_handler()
 // Tim: Handles attach/detach. This replaces finalization handler if dl in initialized in
 // attach mode.
 void
-attach_detach_handler()
+detach_handler()
 {
     if(get_state() < State::Active)
     {
@@ -157,7 +157,7 @@ ensure_finalization(bool _static_init = false)
         config::set_signal_handler(&finalization_handler);
 
     if(config::set_attach_signal_handler(nullptr) == nullptr)
-        config::set_attach_signal_handler(&attach_detach_handler);
+        config::set_attach_signal_handler(&detach_handler);
 
     if(_static_init)
     {
@@ -341,7 +341,7 @@ rocprofsys_set_mpi_hidden(bool use, bool attached)
                                    (attached) ? "y" : "n");
 
     _set_mpi_called       = true;
-    config::is_attached() = attached;
+    config::is_mpi_attached() = attached;
 
     if(use && !attached && get_state() == State::PreInit)
     {
@@ -410,7 +410,7 @@ rocprofsys_init_library_hidden()
     if (get_state() == State::Detached)
     {
         //If in detached state, we want to force reconfigure settings
-        config::set_attach_signal_handler(&attach_detach_handler);
+        config::set_attach_signal_handler(&detach_handler);
         configure_settings(true, true);
         set_state(State::Init);
         return;
@@ -439,7 +439,7 @@ rocprofsys_init_library_hidden()
 extern "C" bool
 rocprofsys_init_tooling_hidden(void)
 {
-    bool _is_attach = config::is_pre_attach_mode();
+    bool _is_attach = config::is_attach_mode();
     if(get_env("ROCPROFSYS_MONOCHROME", false, false)) tim::log::monochrome() = true;
 
     if(!tim::get_env("ROCPROFSYS_INIT_TOOLING", true))
@@ -529,7 +529,7 @@ rocprofsys_init_tooling_hidden(void)
     rocprofsys_preinit_hidden();
 
 #if ROCPROFSYS_USE_ROCM > 0
-    if(tim::get_env<uint32_t>("ROCPROFSYS_ATTACH_PID", 0) > 0)
+    if(_is_attach)
     {
         ROCPROFSYS_VERBOSE_F(1, "Setting up ROCm tracing...\n");
         rocprofiler_sdk::setup();
@@ -742,7 +742,7 @@ rocprofsys_finalize_hidden(void)
         return;
     }
 
-    bool _is_attach = config::is_pre_attach_mode();
+    bool _is_attach = config::is_attach_mode();
 
     if(get_verbose() >= 0 || get_debug()) fprintf(stderr, "\n");
     ROCPROFSYS_VERBOSE_F(0, "finalizing...\n");
@@ -1052,6 +1052,8 @@ rocprofsys_finalize_hidden(void)
     tim::signals::enable_signal_detection(
         { tim::signals::sys_signal::SegFault, tim::signals::sys_signal::Stop },
         [](int) {});
+
+    if (_is_attach) return;
 
     common::destroy_static_objects();
 }

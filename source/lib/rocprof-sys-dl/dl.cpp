@@ -1423,7 +1423,6 @@ extern "C"
     void rocprofsys_set_main(main_func_t) ROCPROFSYS_INTERNAL_API;
 
     int rocprofsys_dl_attach(const char* env_buff) ROCPROFSYS_PUBLIC_API;
-    int rocprofsys_dl_detach(void* foo) ROCPROFSYS_PUBLIC_API; 
 
     void rocprofsys_set_main_init(init_func_t _init_real)
     {
@@ -1607,22 +1606,6 @@ extern "C"
         rocprofsys::dl::get_inited() = false;
         rocprofsys::dl::get_active() = false;
         rocprofsys::dl::get_finied() = false;
-        return 0;
-    }
-
-    int rocprofsys_dl_detach(void* foo)
-    {   
-        ROCPROFSYS_DL_LOG(0, "%s\n", __FUNCTION__);
-        ROCPROFSYS_DL_LOG(0, "Trying to detach and finalize.\n");
-
-        rocprofsys_pop_trace(std::string{}.c_str());
-        rocprofsys_finalize();
-
-        // Reset the state of the dl module
-
-
-        // Reload the instrumentation libraries
-
         return 0;
     }
 }  // extern "C"

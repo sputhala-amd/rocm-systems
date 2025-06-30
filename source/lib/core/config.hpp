@@ -162,10 +162,10 @@ Mode
 get_mode();
 
 bool&
-is_attached();
+is_mpi_attached();
 
 bool&
-is_pre_attach_mode();
+is_attach_mode();
 
 bool&
 is_binary_rewrite();

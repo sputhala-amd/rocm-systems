@@ -465,30 +465,6 @@ unsigned long long PTraceSession::open_library(const std::string& library, int f
     return handle;
 }
 
-bool PTraceSession::close_library(const std::string& library){
-    void* handle =(void*) open_library(library); // ensure the library is opened
-    ROCP_TRACE << "closed library " << library << " with handle " << handle << std::endl; 
-    // if (handle == nullptr)
-    // {
-    //     ROCP_ERROR << "Failed to open library " << library << std::endl;
-    //     return false;
-    // }
-    // ROCP_TRACE << "handle for " << library << " is " << handle << std::endl;
-    // call_function("libc.so", "dlclose", handle);
-
-    // while (handle != 0)
-    // {
-    //     // wait for the library to be opened
-    //     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    //     handle = (void*) open_library(library); // retry
-    //     call_function("libc.so", "dlclose", (void*) handle);
-    //     call_function("libc.so", "dlclose", (void*) handle);
-    //     ROCP_TRACE << "closed library " << library << " with handle " << handle << std::endl;
-    // }
-
-    return true;
-}
-
 bool PTraceSession::find_symbol(void*& addr, const std::string& library, const std::string& symbol)
 {
     std::stringstream searchname;
