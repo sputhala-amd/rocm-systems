@@ -156,8 +156,8 @@ ensure_finalization(bool _static_init = false)
     if(config::set_signal_handler(nullptr) == nullptr)
         config::set_signal_handler(&finalization_handler);
 
-    if(config::set_attach_signal_handler(nullptr) == nullptr)
-        config::set_attach_signal_handler(&detach_handler);
+    if(config::set_detach_signal_handler(nullptr) == nullptr)
+        config::set_detach_signal_handler(&detach_handler);
 
     if(_static_init)
     {
@@ -410,7 +410,7 @@ rocprofsys_init_library_hidden()
     if (get_state() == State::Detached)
     {
         //If in detached state, we want to force reconfigure settings
-        config::set_attach_signal_handler(&detach_handler);
+        config::set_detach_signal_handler(&detach_handler);
         configure_settings(true, true);
         set_state(State::Init);
         return;
@@ -439,7 +439,6 @@ rocprofsys_init_library_hidden()
 extern "C" bool
 rocprofsys_init_tooling_hidden(void)
 {
-    bool _is_attach = config::is_attach_mode();
     if(get_env("ROCPROFSYS_MONOCHROME", false, false)) tim::log::monochrome() = true;
 
     if(!tim::get_env("ROCPROFSYS_INIT_TOOLING", true))
@@ -489,6 +488,8 @@ rocprofsys_init_tooling_hidden(void)
 
     rocprofsys_init_library_hidden();
 
+    bool _is_attach = config::is_attach_mode();
+
     ROCPROFSYS_DEBUG_F("\n");
 
     auto _dtor = scope::destructor{ []() {
@@ -529,7 +530,7 @@ rocprofsys_init_tooling_hidden(void)
     rocprofsys_preinit_hidden();
 
 #if ROCPROFSYS_USE_ROCM > 0
-    if(_is_attach)
+    if(_is_attach && get_use_rocm())
     {
         ROCPROFSYS_VERBOSE_F(1, "Setting up ROCm tracing...\n");
         rocprofiler_sdk::setup();
@@ -601,7 +602,7 @@ rocprofsys_init_tooling_hidden(void)
     categories::setup();
 
 #if defined(ROCPROFSYS_USE_ROCM) && ROCPROFSYS_USE_ROCM > 0
-    if(_is_attach) rocprofiler_sdk::start();
+    if(_is_attach && get_use_rocm()) rocprofiler_sdk::start();
 #endif
     // if static objects are destroyed in the inverse order of when they are
     // created this should ensure that finalization is called before perfetto
@@ -838,8 +839,10 @@ rocprofsys_finalize_hidden(void)
         // Tim: Stop instead of shutting down rocprofiler-sdk in attach mode.
         if(_is_attach)
         {
+            ROCPROFSYS_VERBOSE_F(1, "Shutting down ROCm in attach mode...\n");
             rocprofiler_sdk::flush();
             rocprofiler_sdk::stop();
+            rocprofiler_sdk::shutdown();
         }
         else
         {

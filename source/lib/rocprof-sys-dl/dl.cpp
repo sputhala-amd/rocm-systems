@@ -1582,8 +1582,8 @@ extern "C"
         using ::rocprofsys::common::get_env;
         using ::rocprofsys::dl::get_default_mode;
 
-
-        ::rocprofsys::dl::load_environment_buffer(env_buff);
+        if (env_buff)
+            ::rocprofsys::dl::load_environment_buffer(env_buff);
         auto _pid = get_env("ROCPROFSYS_ATTACH_PID", -1);
 
         if (_pid < 0)

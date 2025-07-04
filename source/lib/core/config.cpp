@@ -1195,7 +1195,7 @@ get_signal_handler()
 }
 
 std::atomic<signal_handler_t>&
-get_attach_signal_handler()
+get_detach_signal_handler()
 {
     static auto _v = std::atomic<signal_handler_t>{ nullptr };
     return _v;
@@ -1257,7 +1257,7 @@ rocprofsys_attach_detach_action(int, siginfo_t*, void*)
     }
     tim::signals::block_signals(get_sampling_signals(),
                                 tim::signals::sigmask_scope::process);
-    auto _handler = get_attach_signal_handler().load();
+    auto _handler = get_detach_signal_handler().load();
     if(_handler) (*_handler)();
 }
 
@@ -1300,25 +1300,25 @@ set_signal_handler(signal_handler_t _func)
 }
 
 signal_handler_t
-set_attach_signal_handler(signal_handler_t _func)
+set_detach_signal_handler(signal_handler_t _func)
 {
     if(_func)
     {
-        auto _handler = get_attach_signal_handler().load(std::memory_order_relaxed);
-        if(get_attach_signal_handler().compare_exchange_strong(_handler, _func,
+        auto _handler = get_detach_signal_handler().load(std::memory_order_relaxed);
+        if(get_detach_signal_handler().compare_exchange_strong(_handler, _func,
                                                                std::memory_order_relaxed))
         {
             return _handler;
         }
         else
         {
-            _handler = get_attach_signal_handler().load(std::memory_order_seq_cst);
-            get_attach_signal_handler().store(_func);
+            _handler = get_detach_signal_handler().load(std::memory_order_seq_cst);
+            get_detach_signal_handler().store(_func);
             return _handler;
         }
     }
 
-    return get_attach_signal_handler().load();
+    return get_detach_signal_handler().load();
 }
 
 void

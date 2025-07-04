@@ -11,10 +11,13 @@
 
 #define ROCPROFSYS_ATTACH_LOG(LEVEL, ...)                                            \
 {                                                                                    \
-    fflush(stderr);                                                                  \
-    fprintf(stderr, "[rocprof-sys][attach] ");                                       \
-    fprintf(stderr, __VA_ARGS__);                                                    \
-    fflush(stderr);                                                                  \
+    if (get_verbose() >= LEVEL)\
+    {\
+        fflush(stderr);                                                                  \
+        fprintf(stderr, "[rocprof-sys][attach] ");                                       \
+        fprintf(stderr, __VA_ARGS__);                                                    \
+        fflush(stderr);                                                                  \
+    }\
 }
 
 #define PTRACE_CALL(op, pid, addr, data)                                                                                                \
@@ -41,7 +44,7 @@ return true;\
     return retval; \
 }();
 
-//TODO: port over ROCP_TRACE and ROCP_ERROR macros from rocprofiler
+//TODO: port over ROCPROFSYS_INFO and ROCPROFSYS_ERROR macros from rocprofiler
 namespace rocprofsys {
 namespace attach {
 
@@ -170,7 +173,7 @@ bool PTraceSession::simple_mmap(void*& addr, size_t length)
     struct user_regs_struct oldregs;
     PTRACE_CALL(PTRACE_GETREGS, pid, NULL, &oldregs);
 
-    ROCP_TRACE << "oldrip: " << oldregs.rip << std::endl;
+    ROCPROFSYS_INFO << "oldrip: " << oldregs.rip << std::endl;
 
     // create a system call to mmap:
     // mmap(NULL, length, prot, flags, -1, 0);
@@ -205,18 +208,18 @@ bool PTraceSession::simple_mmap(void*& addr, size_t length)
     {
         return false;
     }
-    ROCP_TRACE << "stopped for " << status << std::endl;
-    ROCP_TRACE << "stop signal " << ((WSTOPSIG(status))) << std::endl;
-    ROCP_TRACE << "is stopped? " << ((WIFSTOPPED(status)) ? "yes" : "no") << std::endl;
-    ROCP_TRACE << "is trap?    " << ((WSTOPSIG(status) == SIGTRAP) ? "yes" : "no") << std::endl;
-    ROCP_TRACE << "is dumped?  " << ((WCOREDUMP(status)) ? "yes" : "no") << std::endl;
-    ROCP_TRACE << "is cont?    " << ((WIFCONTINUED(status)) ? "yes" : "no") << std::endl;
+    ROCPROFSYS_INFO << "stopped for " << status << std::endl;
+    ROCPROFSYS_INFO << "stop signal " << ((WSTOPSIG(status))) << std::endl;
+    ROCPROFSYS_INFO << "is stopped? " << ((WIFSTOPPED(status)) ? "yes" : "no") << std::endl;
+    ROCPROFSYS_INFO << "is trap?    " << ((WSTOPSIG(status) == SIGTRAP) ? "yes" : "no") << std::endl;
+    ROCPROFSYS_INFO << "is dumped?  " << ((WCOREDUMP(status)) ? "yes" : "no") << std::endl;
+    ROCPROFSYS_INFO << "is cont?    " << ((WIFCONTINUED(status)) ? "yes" : "no") << std::endl;
 
     // get registers to see mmap's return values
     struct user_regs_struct returnregs;
     PTRACE_CALL(PTRACE_GETREGS, pid, NULL, &returnregs);
 
-    ROCP_TRACE << "afterrip: " << returnregs.rip << std::endl;
+    ROCPROFSYS_INFO << "afterrip: " << returnregs.rip << std::endl;
 
     // write in old opcodes
     if (!write(oldregs.rip, old_code, 3))
@@ -426,7 +429,7 @@ bool PTraceSession::find_library(void*& addr, int inpid, const std::string& libr
     {
         if (line.find(library) != std::string::npos)
         {
-            ROCP_TRACE << "entry in target maps file is " << line << std::endl;
+            ROCPROFSYS_INFO << "entry in target maps file is " << line << std::endl;
             break;
         }
     }
@@ -457,7 +460,7 @@ unsigned long long PTraceSession::open_library(const std::string& library, int f
     stop();
     write(reinterpret_cast<size_t>(libname_buffer_addr), libname_buffer, libname_buffer.size());
     cont();
-    ROCP_TRACE << "wrote library name to target process" << std::endl;
+    ROCPROFSYS_INFO << "wrote library name to target process" << std::endl;
 
     unsigned long long handle = 0;
     //now we dlopen
@@ -469,10 +472,10 @@ bool PTraceSession::find_symbol(void*& addr, const std::string& library, const s
 {
     std::stringstream searchname;
     searchname << library << "::" << symbol;
-    ROCP_TRACE << "find_symbol called for " << searchname.str() << std::endl;
+    ROCPROFSYS_INFO << "find_symbol called for " << searchname.str() << std::endl;
     if (target_symbol_addrs.find(searchname.str()) != target_symbol_addrs.end())
     {
-        ROCP_TRACE << "found symbol for " << searchname.str() << " at " << target_symbol_addrs[searchname.str()] << std::endl;
+        ROCPROFSYS_INFO << "found symbol for " << searchname.str() << " at " << target_symbol_addrs[searchname.str()] << std::endl;
         return target_symbol_addrs[searchname.str()];
     }
     void* libraryaddr;
@@ -482,30 +485,30 @@ bool PTraceSession::find_symbol(void*& addr, const std::string& library, const s
     void* hostlibraryaddr;
     if (!find_library(hostlibraryaddr, getpid(), library))
     {
-        ROCP_TRACE << "host does not have the library " << library << " loaded. Attempting to dlopen" << std::endl;
+        ROCPROFSYS_INFO << "host does not have the library " << library << " loaded. Attempting to dlopen" << std::endl;
         libraryaddr = dlopen(library.c_str(), RTLD_NOW | RTLD_GLOBAL);
         if (!libraryaddr)
         {
-            ROCP_ERROR << "host couldn't dlopen " << library<< std::endl;
+            ROCPROFSYS_ERROR << "host couldn't dlopen " << library<< std::endl;
             return false;
         }
         symboladdr = dlsym(libraryaddr, symbol.c_str());
         if (!symboladdr)
         {
-            ROCP_ERROR << "host couldn't dlsym " << symbol<< std::endl;
+            ROCPROFSYS_ERROR << "host couldn't dlsym " << symbol<< std::endl;
             return false;
         }
         if (!find_library(hostlibraryaddr, getpid(), library))
         {
-            ROCP_ERROR << "couldn't determine where " << library << " was loaded for host"<< std::endl;
+            ROCPROFSYS_ERROR << "couldn't determine where " << library << " was loaded for host"<< std::endl;
             return false;
         }
     } else {
-        ROCP_TRACE << "Library " << library << " found on host. Attempting to dlsym" << std::endl;
+        ROCPROFSYS_INFO << "Library " << library << " found on host. Attempting to dlsym" << std::endl;
         symboladdr = dlsym(RTLD_DEFAULT, symbol.c_str());
         if (!symboladdr)
         {
-            ROCP_ERROR << "host couldn't dlsym " << symbol<< std::endl;
+            ROCPROFSYS_ERROR << "host couldn't dlsym " << symbol<< std::endl;
             return false;
         }
     }
@@ -513,19 +516,19 @@ bool PTraceSession::find_symbol(void*& addr, const std::string& library, const s
 
 
     size_t offset = reinterpret_cast<size_t>(symboladdr) - reinterpret_cast<size_t>(hostlibraryaddr);
-    ROCP_TRACE << "offset of " << symbol << " into " << library << " calculated as " << offset<< std::endl;
+    ROCPROFSYS_INFO << "offset of " << symbol << " into " << library << " calculated as " << offset<< std::endl;
 
 
     void* targetlibraryaddr;
     if (!find_library(targetlibraryaddr, pid, library))
     {
-        ROCP_ERROR << "couldn't determine where " << library << " was loaded for target"<< std::endl;
+        ROCPROFSYS_ERROR << "couldn't determine where " << library << " was loaded for target"<< std::endl;
         return false;
     }
 
     addr = reinterpret_cast<void*>(reinterpret_cast<size_t>(targetlibraryaddr) + offset);
     target_symbol_addrs[searchname.str()] = addr;
-    ROCP_TRACE << "found symbol for " << searchname.str() << " at " << addr << std::endl;
+    ROCPROFSYS_INFO << "found symbol for " << searchname.str() << " at " << addr << std::endl;
     return true;
 }
 
@@ -558,5 +561,10 @@ bool PTraceSession::cont()
     return true;
 }
 
+int& get_verbose()
+{
+    static int _v = 0;
+    return _v; 
+}
 }
 }

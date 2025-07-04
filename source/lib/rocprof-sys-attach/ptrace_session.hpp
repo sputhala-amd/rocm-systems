@@ -8,17 +8,11 @@
 #include <sys/ptrace.h>
 #include <dlfcn.h>
 
-#ifndef ROCP_TRACE
-#define ROCP_TRACE std::cout
-#endif
-
-#ifndef ROCP_ERROR
-#define ROCP_ERROR std::cerr
-#endif
-
 namespace rocprofsys {
 namespace attach {
 
+int&
+get_verbose();
 class PTraceSession
 {
     public:
@@ -60,4 +54,20 @@ class PTraceSession
 };
 }
 }
+
+class NullBuffer : public std::streambuf {
+public:
+    int overflow(int c) override { return c; }
+};
+
+inline NullBuffer null_buffer;
+inline std::ostream rocprofsys_null_stream(&null_buffer);
+
+#ifndef ROCPROFSYS_INFO
+#define ROCPROFSYS_INFO ((rocprofsys::attach::get_verbose()>1) ? std::cout : rocprofsys_null_stream)
+#endif
+
+#ifndef ROCPROFSYS_ERROR
+#define ROCPROFSYS_ERROR std::cerr
+#endif
 

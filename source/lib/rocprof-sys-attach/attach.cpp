@@ -30,30 +30,7 @@
 
 namespace common = ::rocprofsys::common;
 
-const char* NOTIFY_PIPE_PATH = "/tmp/rocprofsys_detach_pipe";  
-namespace
-{
-#define ROCPROFILER_CALL(result, msg)                                                              \
-    {                                                                                              \
-        rocprofiler_status_t ROCPROFILER_VARIABLE(CHECKSTATUS, __LINE__) = result;                 \
-        if(ROCPROFILER_VARIABLE(CHECKSTATUS, __LINE__) != ROCPROFILER_STATUS_SUCCESS)              \
-        {                                                                                          \
-            std::string status_msg =                                                               \
-                rocprofiler_get_status_string(ROCPROFILER_VARIABLE(CHECKSTATUS, __LINE__));        \
-            std::cerr << "[" #result "][" << __FILE__ << ":" << __LINE__ << "] " << msg            \
-                      << " failed with error code " << ROCPROFILER_VARIABLE(CHECKSTATUS, __LINE__) \
-                      << ": " << status_msg << "\n"                                                \
-                      << std::flush;                                                               \
-            std::stringstream errmsg{};                                                            \
-            errmsg << "[" #result "][" << __FILE__ << ":" << __LINE__ << "] " << msg " failure ("  \
-                   << status_msg << ")";                                                           \
-            throw std::runtime_error(errmsg.str());                                                \
-        }                                                                                          \
-    }
-
-    std::unique_ptr<rocprofsys::attach::PTraceSession> ptrace_session;
-    
-}
+const char* NOTIFY_PIPE_PATH = "/tmp/rocprofsys_detach_pipe";
 
 namespace
 {
@@ -76,17 +53,18 @@ extern "C"
 {
 
 int
-rocprofsys_attach(size_t pid, std::vector<char*> env) 
+rocprofsys_attach(size_t pid, std::vector<char*> env)
 {  
+    rocprofsys::attach::get_verbose()=rocprofsys::common::get_env("ROCPROFSYS_VERBOSE", 0);
     std::cout << "Process id of host: " << getpid() << std::endl;
     std::cout << "Attachment library called for pid " << pid << std::endl;
-    ptrace_session = std::make_unique<rocprofsys::attach::PTraceSession>(pid);
-    ROCP_TRACE << "Attempting attachment to pid " << pid << std::endl;
+    auto ptrace_session = std::make_unique<rocprofsys::attach::PTraceSession>(pid);
+    ROCPROFSYS_INFO << "Attempting attachment to pid " << pid << std::endl;
     if (!ptrace_session->attach())
     {
-        ROCP_ERROR << "Attachment failed to pid " << pid << std::endl;
+        ROCPROFSYS_ERROR << "Attachment failed to pid " << pid << std::endl;
     }
-    ROCP_TRACE << "Attachment success to pid " << pid << std::endl;
+    ROCPROFSYS_INFO << "Attachment success to pid " << pid << std::endl;
 
     // Environment_buffer is a null-character delimited list of name value pairs.
     // Each name and value is delimited separately.
@@ -102,7 +80,7 @@ rocprofsys_attach(size_t pid, std::vector<char*> env)
                 continue;
             }
             var_count++;
-            ROCP_TRACE << "Adding to environment buffer: " << var << std::endl;
+            ROCPROFSYS_INFO << "Adding to environment buffer: " << var << std::endl;
             while(*var != '=')
             {
                 environment_buffer.emplace_back(*var++);
@@ -123,30 +101,28 @@ rocprofsys_attach(size_t pid, std::vector<char*> env)
     // now, allocate a buffer to store the environment variables
     void* environment_buffer_addr = nullptr;
     ptrace_session->simple_mmap(environment_buffer_addr, environment_buffer.size());
-    ROCP_TRACE << "mmap'd in target process at " << environment_buffer_addr << std::endl;
+    ROCPROFSYS_INFO << "mmap'd in target process at " << environment_buffer_addr << std::endl;
 
     // write to that buffer
     ptrace_session->stop();
     ptrace_session->write(reinterpret_cast<size_t>(environment_buffer_addr), environment_buffer, environment_buffer.size());
     ptrace_session->cont();
-    ROCP_TRACE << "wrote environment buffer to target process" << std::endl;
-
-    // register the API table for rocprofiler. We have to explictly call this here.
-    ptrace_session->call_function("librocprofiler-register.so", "rocprofiler_register_invoke_all_registrations", nullptr);
+    ROCPROFSYS_INFO << "wrote environment buffer to target process" << std::endl;
 
     // dlopen librocprof-sys-dl.so on the target 
     void* handle = (void*) ptrace_session->open_library("librocprof-sys-dl.so");
     if (handle == nullptr)
     {
-        ROCP_ERROR << "Failed to open library librocprof-sys-dl.so in target process" << std::endl;
+        ROCPROFSYS_ERROR << "Failed to open library librocprof-sys-dl.so in target process" << std::endl;
         return -1;
     }
-    ROCP_TRACE << "Opened library librocprof-sys-dl.so in target process at " << handle << std::endl;
-    *(get_dl_handle()) = handle;
+    ROCPROFSYS_INFO << "Opened library librocprof-sys-dl.so in target process at " << handle << std::endl;
 
     // execute the attach function with the buffer addr as parameter
     ptrace_session->call_function("librocprof-sys-dl.so", "rocprofsys_dl_attach", environment_buffer_addr);
-    //TODO: call other APIs from the register library to properly restore the program state?
+    
+    // register the API table for rocprofiler. We have to explictly call this here.
+    ptrace_session->call_function("librocprofiler-register.so", "rocprofiler_register_invoke_all_registrations", nullptr); 
     ptrace_session->stop();
     ptrace_session->detach();
 
@@ -158,7 +134,7 @@ void
 rocprofsys_detach(size_t pid)
 {
     kill(pid,SIGUSR1); 
-    ROCP_TRACE << "Sent detach signal to pid " << pid << std::endl;
+    ROCPROFSYS_INFO << "Sent detach signal to pid " << pid << std::endl;
     std::cout << "Waiting for detach completion via pipe..." << std::endl;  
     int pipe_fd = open(NOTIFY_PIPE_PATH, O_RDONLY);  
     if (pipe_fd == -1) {  
