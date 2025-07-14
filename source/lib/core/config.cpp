@@ -1384,7 +1384,8 @@ get_use_sampling_cputime()
     return static_cast<tim::tsettings<bool>&>(*_v->second).get();
 }
 
-std::set<int> get_sampling_signals(int64_t)
+std::set<int>
+get_sampling_signals(int64_t)
 {
     auto _v = std::set<int>{};
     if(get_use_causal())
@@ -1653,7 +1654,7 @@ print_settings(
             {
                 size_t _wextra = (_md && i < 2) ? 2 : 0;
                 _widths.at(i)  = std::max<size_t>(_widths.at(i),
-                                                 _data.back().at(i).length() + _wextra);
+                                                  _data.back().at(i).length() + _wextra);
             }
         }
     }
@@ -1685,8 +1686,7 @@ print_settings(
         _spacer_extra -= 1;
     std::stringstream _spacer{};
     _spacer.fill('-');
-    _spacer << "#" << std::setw(tot_width + _spacer_extra) << ""
-            << "#";
+    _spacer << "#" << std::setw(tot_width + _spacer_extra) << "" << "#";
     _os << _spacer.str() << "\n";
     for(const auto& itr : _data)
     {

@@ -74,6 +74,12 @@ exception<Tp>::exception(const char* _msg)
 {}
 
 template <typename Tp>
+exception<Tp>::exception(const std::string& _msg, bool with_backtrace)
+: Tp{ _msg }
+, m_what{ with_backtrace ? get_backtrace(_msg) : strdup(_msg.c_str()) }
+{}
+
+template <typename Tp>
 exception<Tp>::~exception()
 {
     free(m_what);
@@ -92,7 +98,7 @@ exception<Tp>::operator=(const exception& _rhs)
     if(this != &_rhs)
     {
         Tp::operator=(_rhs);
-        m_what      = strdup(_rhs.m_what);
+        m_what = strdup(_rhs.m_what);
     }
     return *this;
 }
