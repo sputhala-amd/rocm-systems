@@ -844,7 +844,6 @@ parse_args(int argc, char** argv, std::vector<char*>& _env)
         .dtype("pid")
         .action([&](parser_t& p) {
             auto _v = p.get<std::deque<std::string>>("p");
-            std::cout << "HIIII" << std::endl;
             if(!_v.empty())
             {
                 int pid = std::stoi(_v.front());

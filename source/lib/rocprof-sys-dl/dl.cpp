@@ -562,7 +562,6 @@ bool _rocprofsys_dl_fini = (std::atexit([]() {
                             }),
                             true);
 }  // namespace
-
 }  // namespace dl
 }  // namespace rocprofsys
 
@@ -621,9 +620,6 @@ extern "C"
 
     void rocprofsys_init(const char* a, bool b, const char* c)
     {
-        ROCPROFSYS_DL_LOG(
-            2, "%s() :: get_inited: %s, get_finied:%s, get_active:%s\n", __FUNCTION__, dl::get_inited() ? "true" : "false",
-            dl::get_finied() ? "true" : "false", dl::get_active() ? "true" : "false");
         if(dl::get_inited() && dl::get_finied())
         {
             ROCPROFSYS_DL_LOG(
@@ -642,14 +638,8 @@ extern "C"
         if(dl::get_instrumented() < dl::InstrumentMode::PythonProfile)
             dl::rocprofsys_preinit();
 
-        ROCPROFSYS_DL_LOG(
-            2, "All checks passed -- trying to invoke\n");
         bool _invoked = false;
         ROCPROFSYS_DL_INVOKE_STATUS(_invoked, get_indirect().rocprofsys_init_f, a, b, c);
-        ROCPROFSYS_DL_LOG(
-            2, "Status of _invoked: %s\n",
-            (_invoked) ? "true" : "false"
-        )
 
         if(_invoked)
         {
@@ -660,8 +650,6 @@ extern "C"
             if(dl::get_instrumented() >= dl::InstrumentMode::None &&
                dl::get_instrumented() < dl::InstrumentMode::PythonProfile)
             {
-                ROCPROFSYS_DL_LOG(
-                    2, "%s() :: initializing rocprof-sys instrumentation\n", __FUNCTION__);
                 dl::rocprofsys_postinit((c) ? std::string{ c } : std::string{});
             }
         }

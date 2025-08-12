@@ -406,7 +406,6 @@ rocprofsys_init_library_hidden()
         (void) _ss;
     }
 
-    // configure th_ settings
     if (get_state() == State::Detached)
     {
         //If in detached state, we want to force reconfigure settings
