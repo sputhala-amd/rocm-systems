@@ -1,107 +1,163 @@
-<head>
-  <meta charset="UTF-8">
-  <meta name="description" content="Contributing to rocprofiler-systems">
-  <meta name="keywords" content="ROCm, contributing, rocprofiler-systems">
-</head>
+# Contributing to the ROCm Libraries
 
-# Contributing to rocprofiler-systems #
+Thank you for contributing! This guide outlines the development workflow, contribution standards, and best practices when working in the super-repo.
 
-ROCm Systems Profiler (rocprofiler-systems), formerly Omnitrace, is a comprehensive profiling and tracing tool for parallel applications written in C, C++, Fortran, HIP, OpenCL, and Python which execute on the CPU or CPU+GPU.
+## Getting Started
 
-We welcome contributions to rocprofiler-systems.  Please follow these details to help ensure your contributions will be successfully accepted.
+### Option A: Clone the super-repo
 
-## Table of Contents ##
-
-1. [Issue Discussion](#issue-discussion)
-2. [Acceptance Criteria](#acceptance-criteria)
-3. [Pull Request Guidelines](#pull-request-guidelines)
-4. [Coding Style](#coding-style)
-5. [Code License](#code-license)
-6. [References](#references)
-
-## Issue Discussion ##
-
-Please use the GitHub Issues tab to notify us of issues.
-
-* Use your best judgement for issue creation. Search [existing issues](https://github.com/ROCm/rocprofiler-systems/issues) to make sure your issue isn't already listed
-* If your issue is already listed, upvote the issue and comment or post to provide additional details, such as how you reproduced this issue.
-* If you're not sure if your issue is the same, err on the side of caution and file your issue. You can add a comment to include the issue number (and link) for the similar issue. If we evaluate your issue as being the same as the existing issue, we'll close the duplicate.
-* If your issue doesn't exist, use the issue template to file a new issue.
-* When filing an issue, be sure to provide as much information as possible, including script output so we can collect information about your configuration. This helps reduce the time required to reproduce your issue.
-* Check your issue regularly, as we may require additional information to successfully reproduce the issue.
-* You may also open an issue to ask questions to the maintainers about whether a proposed change meets the acceptance criteria, or to discuss an idea pertaining to the library.
-
-## Acceptance Criteria ##
-
-* Contributions should align with the project's goals and maintainability.
-* Code should be well-documented and include tests where applicable.
-* Ensure that your changes do not break existing functionality.
-* Each commit is to be digitally signed. For more details see: [About commit signature verification - GitHub Docs](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification).
-
-### Exceptions ###
-
-* If you believe your contribution does not fit the guidelines but is still valuable, please discuss it with the maintainers before submitting.
-
-## Pull Request Guidelines ##
-
-By creating a pull request, you agree to the statements made in the [code license](#code-license) section. Your pull request should target the default branch. Our current default branch is the **amd-staging** branch, which serves as our integration branch.
-
-### Process ###
-
-* Fork the repository and create your branch from `amd-staging`.
-* If you've added code that should be tested, add tests.
-* Ensure the test suite passes.
-* Make sure your code conforms to the format. Use clang-format-18 and/or gersemi.
-* Use clear and descriptive commit messages.
-* Submit your PR and work with the reviewer or maintainer to get your PR approved
-* Once approved, the PR is brought onto internal CI systems and may be merged into the component during our release cycle, as coordinated by the maintainer.
-
-### Setting Up the Development Environment ###
-
-* It is recommended to [fork](https://github.com/ROCm/rocprofiler-systems/fork) the repository.
-* Clone your forked repository: `git clone https://github.com/ROCm/<yourgithub-id>/rocprofiler-systems.git`
-* Navigate to the project directory: `cd rocprofiler-systems`
-* Set the original repository URL as the remote upstream using `git remote add upstream https://github.com/ROCm/rocprofiler-systems` (or `git remote set-url upstream https://github.com/ROCm/rocprofiler-systems`)
-* Verify if origin and upstream points correctly with `git remote -v`.
-* Start a new branch for your work: `git checkout -b topic-<yourFeatureName>`
-* Build the project as outlined in [ROCm documentation](https://github.com/ROCm/rocprofiler-systems/blob/a03770c0606c23fda5e2c83782f2d188eb8522f5/docs/install/install.rst#building-and-installing-rocm-systems-profiler).
-
-### Running Tests ###
-
-* To run the test suite, use the following command: `make test`
-* Ensure all tests pass before submitting a pull request.
-* If the project was built with option `-D ROCPROFSYS_BUILD_TESTING=ON`, then the tests are built with it. Individual tests groups can be run using command: `ctest -R <test-name> -V --output-on-failure`. Command `ctest --print-labels` will list all the test names which can be passed to -R as test-name.
-
-## Coding Style ##
-
-* Adhere to the coding style used in the project. This includes naming conventions, indentation, and commenting practices.
-* Follow the existing directory structure and organization of the codebase.
-* Group related files together and maintain a logical hierarchy.
-* Use `clang-format-18` and `gersemi` formatters to ensure consistency.
-
-### Using pre-commit hooks ###
-
-Our project supports optional [*pre-commit hooks*](https://pre-commit.com/#introduction) which developers can leverage to verify formatting before publishing their code. Once enabled, any commits you propose to the repository will be automatically checked for formatting. Initial setup is as follows:
-
-```shell
-pip install pre-commit  # or: apt-get install pre-commit
-cd rocprofiler-systems
-pre-commit install
+```bash
+git clone https://github.com/ROCm/rocm-systems.git
+cd rocm-systems
 ```
 
-**Note:** pre-commit version **3.0.0 or higher** is required.
+### Option B: Clone the super-repo with Sparse-Checkout
 
-Now, when you commit code to the repository you should see something like this:
+To limit your local checkout to only the project(s) you work on and improve performance with a large codebase, you can configure sparse-checkout prior to cloning:
 
-![A screen capture showing terminal output from a pre-commit hook](docs/data/pre-commit-hook.png)
+```bash
+git clone --no-checkout --filter=blob:none https://github.com/ROCm/rocm-systems.git
+cd rocm-systems
+git sparse-checkout init --cone
+git sparse-checkout set projects/rocblas shared/tensile
+git checkout develop # or the branch you are starting from
+```
 
-Please see the [pre-commit documentation](https://pre-commit.com/#quick-start) for additional information.
+This uses Git’s partial clone feature (`--filter=blob:none`) to reduce how much data is downloaded, and sparse-checkout to limit what is checked out to disk. For more background, including guidance on tree-less clones (`--filter=tree:0`) and shallow clones (`--depth=1`), see GitHub’s [blog post on partial and shallow clones](https://github.blog/open-source/git/get-up-to-speed-with-partial-clone-and-shallow-clone).
 
-## Code License ##
+With the source tree as of June 19th, 2025, the clone command lasted 4 seconds in one test run.
+The checkout command of the two projects lasted less than 90 seconds.
 
-All code contributed to this project will be licensed under the license identified in the [License](LICENSE). Your contribution will be accepted under the same license.
+## Working on Multiple Projects
 
-## References ##
+If your work involves changing projects or introducing new projects, you can update your sparse-checkout environment:
 
-1. [ROCm Systems Profiler Documentation](https://rocm.docs.amd.com/projects/rocprofiler-systems/en/latest/index.html)
-2. [ROCm Systems Profiler README](README.md)
+```bash
+git sparse-checkout set projects/hipsparse projects/rocsparse
+```
+
+This keeps your working directory clean and fast, as you won't need to clone the entire super-repo.
+
+---
+
+## Directory Structure
+
+- `.github/`: CI workflows, scripts, and configuration files for synchronizing repositories during the migration period.
+- `docs/`: Documentation, including this guide and other helpful resources.
+- `projects/<name>/`: Each folder corresponds to a ROCm library that was previously maintained in its own GitHub repository and released as distinct packages.
+- `shared/<name>/`: Shared components that existed in their own repository, used as dependencies by multiple libraries, but do not produce distinct packages in previous ROCm releases.
+
+Further changes to the structure may be made to improve development efficiency and minimize redundancy.
+
+---
+
+## Making Changes
+
+### From a Developer's Perspective
+
+You can continue working inside your project's folder as you did before the super-repo migration.
+This process is intended to remain as familiar as possible, though some adjustments may be made to improve efficiency based on feedback.
+
+#### Example: hipblaslt Developer
+
+```bash
+cd projects/hipblaslt
+# Edit, build, test as usual
+```
+
+---
+
+## Keeping Your Branch in Sync
+
+To stay up to date with the latest changes in the super-repo:
+
+```bash
+git fetch origin
+git rebase origin/develop
+```
+
+Avoid using git merge to keep history clean and maintain a linear progression.
+
+---
+
+## New Product Introduction (NPI) and New Technology Introduction (NTI) Development
+
+A mirror of this super-repo will be on GitHub Enterprise Managed User (EMU) and available only on the AMD intranet.
+Please reach out within the AMD intranet if you need the link and permissions.
+
+A primary development branch will be created for a new product or new technology.
+This branch will remain private until it is cleared to be shared to the public, where it be pushed to the public repo and merged with `develop`.
+It will have a subset of CI/CD in place, relative to the public repo.
+There will be automation setup to regularly to rebase the branch in the EMU repo with latest `develop` from the public repo.
+
+---
+
+## Branching Model
+
+We are transitioning to trunk-based development, with the tentative plan happening after the next major version release (7.0).
+Until the switch is fully implemented, we will continue to sync changes to individual repositories following their existing development model (e.g., `develop` -> `staging` -> `mainline` -> `release`).
+However, once trunk-based development is in place, feature branches will be created directly from the default branch, `develop`.
+During this period, a high priority will be placed on keeping the `develop` branch healthy.
+
+## Pull Request Guidelines
+
+### 1. Branch Naming and Forks
+
+When creating a branch for your work, use the following convention to make branch names informative and consistent: `users/<github-username>/<branch-name>`.
+
+Try to keep branch names descriptive yet concise to reflect the purpose of the branch. For example, referencing the GitHub Issue number if the pull request is related.
+
+The build and test infrastructure has some tasks where pull requests from forks have fewer privileges than pull requests from branches within this repo. Thus, branches in this repo are encouraged but you are welcome to use forks and their potential gaps. We are actively working towards achieving feature parity between pull requests from branches and pull requests from forks. Please stay tuned.
+
+### 2. Opening the PR
+
+Once you're ready:
+
+```bash
+git push origin branch-name-like-above
+```
+
+### 3. Auto-Labeling and Review Routing
+
+The super-repo uses automation to assign labels and reviewers based on the changed files. Reviewers are designated via the top-level CODEOWNERS file.
+
+### 4. Tests and CI
+
+Existing testing and CI infrastructure will be updated to directly point to the super-repo.
+Specific checks will become mandatory for pull requests before merging. Initially, these will be limited to compilation, but will expand to correctness tests and eventually performance tests.
+Hardware and operating system coverage will also expand for these checks over time.
+Please refer to [this documentation](/docs/continuous-integration.md) for further details on the current signals that will be provided through CI for pull requests and commits.
+
+---
+
+## Gardener Rotation
+
+In order to achieve the goal of keeping the `develop` branch healthy, a team of ROCm engineers will be dedicated towards monitoring and triaging issues that arise.
+This team will collaborate to identify offending commits to isolate what changes need to be reverted.
+There may be occassions where bulk reverts may need to occur for more complex issues.
+
+See [docs/gardening.md](docs/gardening.md) for more information.
+
+---
+
+## Developer Communications
+
+As this super-repo continues to evolve, weekly office hour sessions with a wide audience of ROCm engineers and managers will occur.
+Focused meetings with smaller project teams will be also be scheduled regularly.
+These discussions can go over any topic of the super-repo important to the different teams.
+If you want to be looped into these syncs, please reach out to project leadership.
+
+---
+
+## Integration with TheRock
+
+[TheRock](https://github.com/rocm/therock) is our new open-source build system for ROCm. It is designed to significantly enhance our support and scalability for ROCm 7.0 and beyond, and it is actively welcoming community contributions. TheRock currently supports a subset of AMD GPU targets, with ongoing efforts from our team and the community to expand this further, as detailed in TheRock [roadmap](https://github.com/ROCm/TheRock/blob/main/ROADMAP.md).
+
+As part of this mono-repo, TheRock is leveraged to extend our CI to add faster support for more testing and more targets with faster builds speeds. While some of these improvements will be seen with the existing CI, some will be exclusive with the TheRock CI targets given the changes in the high-level CMake system and specific patches that still remain within TheRock. Post ROCm 7.0, our goal is to unify our build system to one to ensure all of our CI has the benefits of the new build system.
+
+---
+
+- 💬 [Start a discussion](https://github.com/ROCm/rocm-systems/discussions)
+- 🐞 [Open an issue](https://github.com/ROCm/rocm-systems/issues)
+
+Happy contributing!
