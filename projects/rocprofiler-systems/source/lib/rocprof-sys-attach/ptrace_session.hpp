@@ -5,6 +5,7 @@
 #include <sstream>
 #include <string>
 #include <sys/ptrace.h>
+#include <unistd.h>
 #include <unordered_map>
 #include <vector>
 
@@ -42,7 +43,7 @@ public:
                        void* second, unsigned long long* ret);
 
     unsigned long long open_library(const std::string& library);
-    unsigned long long open_library(const std::string& library, int flag);
+    unsigned long long open_library(const std::string& library, uint32_t flag);
 
     bool stop();
     bool cont();

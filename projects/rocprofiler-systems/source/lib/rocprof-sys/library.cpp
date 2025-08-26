@@ -1116,8 +1116,12 @@ rocprofsys_finalize_hidden(void)
         int         pipe_fd          = open(NOTIFY_PIPE_PATH, O_WRONLY);
         if(pipe_fd != -1)
         {
-            size_t _ =
+            ssize_t bytes =
                 write(pipe_fd, "D", 1);  // Write one byte to unblock the controller
+            if(bytes == -1)
+            {
+                ROCPROFSYS_VERBOSE_F(0, "Failed to write to detach confirmation pipe");
+            }
             close(pipe_fd);
         }
         else

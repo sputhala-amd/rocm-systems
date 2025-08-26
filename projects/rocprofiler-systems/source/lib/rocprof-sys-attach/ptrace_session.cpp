@@ -8,6 +8,7 @@
 #include <sys/user.h>
 #include <sys/wait.h>
 #include <thread>
+#include <unistd.h>
 
 #define ROCPROFSYS_ATTACH_LOG(LEVEL, ...)                                                \
     {                                                                                    \
@@ -473,7 +474,7 @@ PTraceSession::open_library(const std::string& library)
     return open_library(library, (RTLD_LAZY | RTLD_LOCAL));
 }
 unsigned long long
-PTraceSession::open_library(const std::string& library, int flag)
+PTraceSession::open_library(const std::string& library, uint32_t flag)
 {
     const char*          libname_cstring = library.c_str();
     std::vector<uint8_t> libname_buffer(
