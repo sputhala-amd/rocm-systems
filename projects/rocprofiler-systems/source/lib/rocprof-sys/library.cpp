@@ -461,13 +461,16 @@ rocprofsys_init_library_hidden()
     {
         // If in detached state, we want to force reconfigure settings
         config::set_detach_signal_handler(&detach_handler);
-        configure_settings(true, true);
         set_state(State::Init);
+
+        configure_settings(true, true);
+
         return;
     }
-    configure_settings();
 
     set_state(State::Init);
+
+    configure_settings();
 
     ROCPROFSYS_CI_THROW(get_state() != State::Init,
                         "set_state(State::Init) failed. state is %s",
