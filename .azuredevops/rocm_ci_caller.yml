@@ -71,6 +71,10 @@ jobs:
     match_found: $[ dependencies.Determine_Changes.outputs['detectChanges.match_found'] ]
   steps:
     - checkout: none
+    
+    - script: |
+        echo "DEBUG: match_found = '$(match_found)'"
+      displayName: 'Debug match_found variable'
 
     - ${{ if eq(variables.match_found, 'true') }}:
       - script: |
