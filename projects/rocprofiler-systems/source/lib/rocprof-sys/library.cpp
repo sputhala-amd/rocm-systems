@@ -92,10 +92,12 @@
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <fcntl.h>
 #include <mutex>
 #include <pthread.h>
 #include <stdexcept>
 #include <string_view>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
 
@@ -146,11 +148,27 @@ finalization_handler()
     if(get_state() == State::Active) rocprofsys_finalize();
 }
 
+// Tim: Handles attach/detach. This replaces finalization handler if dl in initialized in
+// attach mode.
+void
+detach_handler()
+{
+    if(get_state() < State::Active)
+    {
+        ROCPROFSYS_VERBOSE_F(1, "ATTACH ACTIVE\n");
+        rocprofsys_init_tooling_hidden();
+        return;
+    }
+    rocprofsys_finalize();
+}
 auto
 ensure_finalization(bool _static_init = false)
 {
     if(config::set_signal_handler(nullptr) == nullptr)
         config::set_signal_handler(&finalization_handler);
+
+    if(config::set_detach_signal_handler(nullptr) == nullptr)
+        config::set_detach_signal_handler(&detach_handler);
 
     if(_static_init)
     {
@@ -373,8 +391,8 @@ rocprofsys_set_mpi_hidden(bool use, bool attached)
                                    "use: %s, attached: %s\n", (use) ? "y" : "n",
                                    (attached) ? "y" : "n");
 
-    _set_mpi_called       = true;
-    config::is_attached() = attached;
+    _set_mpi_called           = true;
+    config::is_mpi_attached() = attached;
 
     if(use && !attached && get_state() == State::PreInit)
     {
@@ -432,7 +450,12 @@ rocprofsys_init_library_hidden()
     ROCPROFSYS_CI_THROW(get_state() != State::PreInit, "State is not PreInit :: %s",
                         std::to_string(get_state()).c_str());
 
-    if(get_state() != State::PreInit || get_state() == State::Init || _once) return;
+    if(get_state() != State::PreInit || get_state() == State::Init || _once)
+    {
+        if(get_state() < State::Detached)
+            return;  // We want to allow this function to be called from detached state to
+                     // allow repeated attach
+    }
     _once = true;
 
     ROCPROFSYS_SCOPED_THREAD_STATE(ThreadState::Internal);
@@ -450,16 +473,26 @@ rocprofsys_init_library_hidden()
         (void) _ss;
     }
 
+    if(get_state() == State::Detached)
+    {
+        // If in detached state, we want to force reconfigure settings
+        config::set_detach_signal_handler(&detach_handler);
+        set_state(State::Init);
+
+        configure_settings(true, true);
+
+        return;
+    }
+
     set_state(State::Init);
+
+    configure_settings();
 
     ROCPROFSYS_CI_THROW(get_state() != State::Init,
                         "set_state(State::Init) failed. state is %s",
                         std::to_string(get_state()).c_str());
 
     ROCPROFSYS_CONDITIONAL_BASIC_PRINT_F(_debug_init, "Configuring settings...\n");
-
-    // configure the settings
-    configure_settings();
 
     auto _debug_value = get_debug();
     if(_debug_init) config::set_setting_value("ROCPROFSYS_DEBUG", true);
@@ -498,16 +531,19 @@ rocprofsys_init_tooling_hidden(void)
 
     if(get_state() != State::PreInit || get_state() == State::Init || _once == getpid())
     {
-        return false;
+        // We want to allow this function to be called from detached state to allow
+        // repeated attach
+        if(get_state() < State::Detached) return false;
     }
     _once = getpid();
 
     ROCPROFSYS_SCOPED_THREAD_STATE(ThreadState::Internal);
 
-    ROCPROFSYS_CONDITIONAL_THROW(
-        get_state() == State::Init,
-        "%s called after rocprofsys_init_library() was explicitly called",
-        ROCPROFSYS_FUNCTION);
+    // Tim: Allows this function to be called after rocprofsys_init_library_hidden();
+    // ROCPROFSYS_CONDITIONAL_THROW(
+    //     get_state() == State::Init,
+    //     "%s called after rocprofsys_init_library() was explicitly called",
+    //     ROCPROFSYS_FUNCTION);
 
     ROCPROFSYS_CONDITIONAL_BASIC_PRINT_F(get_verbose_env() >= 0,
                                          "Instrumentation mode: %s\n",
@@ -556,6 +592,12 @@ rocprofsys_init_tooling_hidden(void)
             push_enable_sampling_on_child_threads(get_use_sampling());
             sampling::unblock_signals();
         }
+
+#if defined(ROCPROFSYS_USE_ROCM) && ROCPROFSYS_USE_ROCM > 0
+        ROCPROFSYS_VERBOSE_F(1, "Setting up ROCm tracing...\n");
+        rocprofiler_sdk::setup();
+        if(is_attach_mode() && get_use_rocm()) rocprofiler_sdk::start();
+#endif
         get_main_bundle()->start();
         ROCPROFSYS_DEBUG_F("State: %s -> State::Active\n",
                            std::to_string(get_state()).c_str());
@@ -782,6 +824,8 @@ rocprofsys_finalize_hidden(void)
         return;
     }
 
+    bool _is_attach = config::is_attach_mode();
+
     if(get_verbose() >= 0 || get_debug()) fprintf(stderr, "\n");
     ROCPROFSYS_VERBOSE_F(0, "finalizing...\n");
 
@@ -867,7 +911,17 @@ rocprofsys_finalize_hidden(void)
     if(get_use_rocm())
     {
         ROCPROFSYS_VERBOSE_F(1, "Shutting down ROCm...\n");
-        rocprofiler_sdk::shutdown();
+        // Tim: Stop instead of shutting down rocprofiler-sdk in attach mode.
+        if(_is_attach)
+        {
+            ROCPROFSYS_VERBOSE_F(1, "Shutting down ROCm in attach mode...\n");
+            rocprofiler_sdk::stop();
+            rocprofiler_sdk::shutdown();
+        }
+        else
+        {
+            rocprofiler_sdk::shutdown();
+        }
     }
 #endif
 
@@ -1062,9 +1116,35 @@ rocprofsys_finalize_hidden(void)
 
     ROCPROFSYS_VERBOSE_F(0, "Finalized: %s\n", _finalization.as_string().c_str());
 
+    if(_is_attach)
+    {
+        // Send signal to controller to finish cleaning up
+        const char* NOTIFY_PIPE_PATH = "/tmp/rocprofsys_detach_pipe";  // Hardcoded path
+        int         pipe_fd          = open(NOTIFY_PIPE_PATH, O_WRONLY);
+        if(pipe_fd != -1)
+        {
+            ssize_t bytes =
+                write(pipe_fd, "D", 1);  // Write one byte to unblock the controller
+            if(bytes == -1)
+            {
+                ROCPROFSYS_VERBOSE_F(0, "Failed to write to detach confirmation pipe");
+            }
+            close(pipe_fd);
+        }
+        else
+        {
+            // Log an error if possible
+            fprintf(stderr, "[TARGET ERROR] Could not open notify pipe.\n");
+        }
+        set_state(State::Detached);
+        ROCPROFSYS_VERBOSE_F(1, "Resuming normal execution.\n");
+    }
+
     tim::signals::enable_signal_detection(
         { tim::signals::sys_signal::SegFault, tim::signals::sys_signal::Stop },
         [](int) {});
+
+    if(_is_attach) return;
 
     common::destroy_static_objects();
 #if ROCPROFSYS_USE_ROCM > 0

@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -65,3 +66,12 @@ remove_env(std::vector<char*>& _environ, std::string_view _env_var);
 
 std::vector<char*>
 parse_args(int argc, char** argv, std::vector<char*>& envp);
+
+size_t*
+get_pid();
+
+size_t*
+get_attach_duration();
+
+int
+attach(std::vector<char*> env);

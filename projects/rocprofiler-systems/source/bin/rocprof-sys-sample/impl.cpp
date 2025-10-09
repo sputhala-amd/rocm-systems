@@ -26,6 +26,7 @@
 #include "common/environment.hpp"
 #include "common/join.hpp"
 #include "common/setup.hpp"
+#include "rocprof-sys-attach/attach.hpp"
 
 #include <timemory/environment.hpp>
 #include <timemory/log/color.hpp>
@@ -35,12 +36,14 @@
 #include <timemory/utility/join.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -369,6 +372,12 @@ parse_args(int argc, char** argv, std::vector<char*>& _env)
 %{INDENT}%  Values:
 %{INDENT}%    0     avoid triggering the bug, potentially at the cost of reduced performance
 %{INDENT}%    1     do not modify how ROCm is notified about kernel completion)";
+
+    const auto* _attach_desc =
+        R"(Attach to a running process. This option requires the PID of the process to attach to.)";
+
+    const auto* _attach_duration_desc =
+        R"(Specify the attach duration in milliseconds. Will auto detach after the specified duration)";
 
     const auto* _trace_policy_desc =
         R"(Policy for new data when the buffer size limit is reached:
@@ -840,6 +849,25 @@ parse_args(int argc, char** argv, std::vector<char*>& _env)
             update_env(_env, "HSA_ENABLE_INTERRUPT", p.get<int>("hsa-interrupt"));
         });
 
+    parser.add_argument({ "-p", "--attach-pid" }, _attach_desc)
+        .count(1)
+        .dtype("pid")
+        .action([&](parser_t& p) {
+            int pid      = p.get<int>("attach-pid");
+            *(get_pid()) = pid;  // set target process PID
+            update_env(_env, "ROCPROFSYS_ATTACH_PID", getpid());  // Set to this PID
+        });
+
+    // --attach-duration-msec
+    parser.add_argument({ "--attach-duration-msec" }, _attach_duration_desc)
+        .count(1)
+        .dtype("milliseconds")
+        .required({ "attach-pid" })
+        .action([&](parser_t& p) {
+            int ms                   = p.get<int>("attach-duration-msec");
+            *(get_attach_duration()) = ms;
+            update_env(_env, "ROCPROFSYS_ATTACH_DURATION", ms);
+        });
     parser.end_group();
 
     auto _inpv = std::vector<char*>{};
@@ -877,4 +905,40 @@ parse_args(int argc, char** argv, std::vector<char*>& _env)
     free(_omni_libpath);
 
     return _outv;
+}
+
+size_t*
+get_pid()
+{
+    static size_t _pid = 0;
+    return &_pid;
+}
+
+size_t*
+get_attach_duration()
+{
+    static size_t _v = 0;
+    return &_v;
+}
+
+int
+attach(std::vector<char*> env)
+{
+    rocprofsys_attach(*(get_pid()), env);
+    size_t ms = *(get_attach_duration());
+    if(!ms)
+    {
+        // Press any key to detach
+        std::cout << "Press any key to detach from the process with PID: " << *(get_pid())
+                  << std::endl;
+        std::cin.get();
+        rocprofsys_detach(*(get_pid()));
+    }
+    else
+    {
+        std::cout << "Attached. Will detach automatically in " << ms << " milliseconds\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+        rocprofsys_detach(*(get_pid()));
+    }
+    return 0;
 }

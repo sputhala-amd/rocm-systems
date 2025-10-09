@@ -48,11 +48,13 @@ using signal_handler_t = void (*)(void);
 // if arg is non-null, returns replaced signal handler
 signal_handler_t set_signal_handler(signal_handler_t);
 
+signal_handler_t set_detach_signal_handler(signal_handler_t);
+
 bool
 settings_are_configured() ROCPROFSYS_HOT;
 
 void
-configure_settings(bool _init = true);
+configure_settings(bool _init = true, bool _force = false);
 
 void
 configure_mode_settings(const std::shared_ptr<settings>&);
@@ -160,7 +162,10 @@ Mode
 get_mode();
 
 bool&
-is_attached();
+is_mpi_attached();
+
+bool&
+is_attach_mode();
 
 bool&
 is_binary_rewrite();

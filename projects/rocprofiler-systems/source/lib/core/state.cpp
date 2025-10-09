@@ -134,6 +134,7 @@ to_string(rocprofsys::State _v)
         case rocprofsys::State::Active: return "Active";
         case rocprofsys::State::Disabled: return "Disabled";
         case rocprofsys::State::Finalized: return "Finalized";
+        case rocprofsys::State::Detached: return "Detached";
     }
     return {};
 }
